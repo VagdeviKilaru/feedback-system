@@ -1,30 +1,32 @@
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Query
 from fastapi.middleware.cors import CORSMiddleware
-import uvicorn
-import os
 
 from app.websocket_manager import manager
 from app.ai_processor import analyzer
 
+# ----------------------------------
 # Initialize FastAPI app
+# ----------------------------------
 app = FastAPI(
     title="Real-Time Attention Monitoring System",
     description="AI-powered student attention monitoring for online classes",
     version="1.0.0"
 )
 
-# Configure CORS (allow frontend access)
+# ----------------------------------
+# CORS configuration
+# ----------------------------------
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],   # In production you can restrict this
+    allow_origins=["*"],   # OK for now; restrict in production
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# -----------------------------
+# ----------------------------------
 # Root endpoint
-# -----------------------------
+# ----------------------------------
 @app.get("/")
 async def root():
     return {
@@ -38,9 +40,9 @@ async def root():
         }
     }
 
-# -----------------------------
-# Health check endpoint
-# -----------------------------
+# ----------------------------------
+# Health check
+# ----------------------------------
 @app.get("/health")
 async def health_check():
     return {
@@ -49,9 +51,9 @@ async def health_check():
         "active_teachers": manager.get_active_teachers_count()
     }
 
-# -----------------------------
+# ----------------------------------
 # Stats endpoint
-# -----------------------------
+# ----------------------------------
 @app.get("/stats")
 async def get_stats():
     return {
@@ -60,9 +62,9 @@ async def get_stats():
         "students_info": list(manager.students_info.values())
     }
 
-# -----------------------------
-# Student WebSocket endpoint
-# -----------------------------
+# ----------------------------------
+# Student WebSocket
+# ----------------------------------
 @app.websocket("/ws/student/{student_id}")
 async def student_websocket(
     websocket: WebSocket,
@@ -85,14 +87,14 @@ async def student_websocket(
                     landmark_data
                 )
 
-                # Update student attention
+                # Update student state
                 await manager.update_student_attention(
                     student_id,
                     {
                         "status": status,
                         "confidence": confidence,
                         "gaze_direction": analysis.get("gaze_direction"),
-                        "head_pose": analysis.get("head_pose")
+                        "head_pose": analysis.get("head_pose"),
                     }
                 )
 
@@ -116,9 +118,9 @@ async def student_websocket(
         await manager.disconnect_student(student_id)
         analyzer.reset_student_tracking(student_id)
 
-# -----------------------------
-# Teacher WebSocket endpoint
-# -----------------------------
+# ----------------------------------
+# Teacher WebSocket
+# ----------------------------------
 @app.websocket("/ws/teacher")
 async def teacher_websocket(websocket: WebSocket):
     await manager.connect_teacher(websocket)
@@ -144,18 +146,3 @@ async def teacher_websocket(websocket: WebSocket):
     except Exception as e:
         print(f"Teacher WebSocket error: {e}")
         await manager.disconnect_teacher(websocket)
-
-# -----------------------------
-# Railway entry point
-# -----------------------------
-import os
-import uvicorn
-
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 8000))
-    uvicorn.run(
-        "app.main:app",
-        host="0.0.0.0",
-        port=port,
-        log_level="info"
-    )

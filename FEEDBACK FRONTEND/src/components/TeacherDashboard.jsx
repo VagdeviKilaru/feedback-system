@@ -44,7 +44,7 @@ export default function TeacherDashboard() {
                 ]);
                 break;
 
-            case "attention_update":
+            case "student_update":
                 setStudents((prev) =>
                     prev.map((s) =>
                         s.id === msg.data.student_id
@@ -81,8 +81,7 @@ export default function TeacherDashboard() {
     // WebSocket connect
     // ===============================
     useEffect(() => {
-        const WS_URL =
-            import.meta.env.VITE_WS_URL || "ws://localhost:8000";
+        const WS_URL = import.meta.env.VITE_WS_URL || "ws://localhost:8000";
 
         const ws = new WebSocketManager(
             `${WS_URL}/ws/teacher`,
