@@ -30,11 +30,12 @@ function HomePage() {
                         marginBottom: "16px",
                     }}
                 >
-                    Attention Monitoring System
+                    Live Feedback System
                 </h1>
 
                 <p style={{ fontSize: "18px", color: "#6b7280", marginBottom: "40px" }}>
-                    Real-Time AI-Powered Student Attention Tracking
+                    <p>Real-Time Student Feedback & Attention Detection</p>
+
                 </p>
 
                 <div
