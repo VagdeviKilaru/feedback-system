@@ -31,6 +31,7 @@ export default function TeacherDashboard() {
     const [alerts, setAlerts] = useState([]);
     const [isConnected, setIsConnected] = useState(false);
     const [showCamera, setShowCamera] = useState(true);
+    const [roomId, setRoomId] = useState(null);
     const [stats, setStats] = useState({
         total: 0,
         attentive: 0,
@@ -44,7 +45,8 @@ export default function TeacherDashboard() {
         console.log('Teacher received:', message);
 
         switch (message.type) {
-            case 'initial_state':
+            case 'room_created':
+                setRoomId(message.data.room_id);
                 setStudents(message.data.students || []);
                 break;
 
@@ -143,6 +145,13 @@ export default function TeacherDashboard() {
 
     const clearAlerts = () => {
         setAlerts([]);
+    };
+
+    const copyRoomCode = () => {
+        if (roomId) {
+            navigator.clipboard.writeText(roomId);
+            alert(`Room code ${roomId} copied to clipboard!`);
+        }
     };
 
     const formatTime = (timestamp) => {
@@ -255,6 +264,53 @@ export default function TeacherDashboard() {
                         </button>
                     </div>
                 </div>
+
+                {/* Room Code Display */}
+                {roomId && (
+                    <div style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        padding: '16px 20px',
+                        backgroundColor: '#eff6ff',
+                        borderRadius: '12px',
+                        border: '2px solid #3b82f6',
+                        marginBottom: '16px',
+                    }}>
+                        <div>
+                            <div style={{ fontSize: '12px', color: '#1e40af', marginBottom: '4px', fontWeight: '500' }}>
+                                📋 Room Code (Share with students):
+                            </div>
+                            <div style={{
+                                fontSize: '36px',
+                                fontWeight: 'bold',
+                                color: '#1e3a8a',
+                                letterSpacing: '6px',
+                                fontFamily: 'monospace',
+                            }}>
+                                {roomId}
+                            </div>
+                        </div>
+                        <button
+                            onClick={copyRoomCode}
+                            style={{
+                                padding: '12px 24px',
+                                backgroundColor: '#3b82f6',
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: '8px',
+                                cursor: 'pointer',
+                                fontSize: '14px',
+                                fontWeight: '600',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '8px',
+                            }}
+                        >
+                            📋 Copy Code
+                        </button>
+                    </div>
+                )}
 
                 {/* Stats Cards */}
                 <div style={{
@@ -376,13 +432,17 @@ export default function TeacherDashboard() {
                         {students.length === 0 ? (
                             <div style={{
                                 display: 'flex',
+                                flexDirection: 'column',
                                 alignItems: 'center',
                                 justifyContent: 'center',
                                 height: '100%',
                                 color: '#9ca3af',
                                 fontSize: '14px',
+                                textAlign: 'center',
                             }}>
-                                No students connected yet
+                                <div style={{ fontSize: '64px', marginBottom: '16px' }}>👥</div>
+                                <div style={{ fontWeight: '600', marginBottom: '8px' }}>No students connected yet</div>
+                                <div>Share the room code with students to get started</div>
                             </div>
                         ) : (
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
@@ -514,7 +574,7 @@ export default function TeacherDashboard() {
                                 fontSize: '14px',
                             }}>
                                 <div style={{ fontSize: '48px', marginBottom: '12px' }}>✓</div>
-                                <div>All students are attentive</div>
+                                <div style={{ fontWeight: '600' }}>All students are attentive</div>
                             </div>
                         ) : (
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
