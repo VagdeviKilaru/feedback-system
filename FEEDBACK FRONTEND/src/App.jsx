@@ -1,8 +1,8 @@
 import { BrowserRouter as Router, Routes, Route, useNavigate } from "react-router-dom";
 
-// ✅ IMPORT AS NAMED EXPORTS
-import { StudentView } from "./components/StudentView";
-import { TeacherDashboard } from "./components/TeacherDashboard";
+// ✅ DEFAULT IMPORTS (THIS FIXES THE BUILD)
+import StudentView from "./components/StudentView";
+import TeacherDashboard from "./components/TeacherDashboard";
 
 function HomePage() {
     const navigate = useNavigate();
@@ -33,13 +33,7 @@ function HomePage() {
                     Attention Monitoring System
                 </h1>
 
-                <p
-                    style={{
-                        fontSize: "18px",
-                        color: "#6b7280",
-                        marginBottom: "40px",
-                    }}
-                >
+                <p style={{ fontSize: "18px", color: "#6b7280", marginBottom: "40px" }}>
                     Real-Time AI-Powered Student Attention Tracking
                 </p>
 
@@ -82,8 +76,7 @@ function HomePage() {
                                 fontWeight: "600",
                             }}
                         >
-                            <div style={{ fontSize: "32px", marginBottom: "8px" }}>🎓</div>
-                            Join as Student
+                            🎓 Join as Student
                         </button>
 
                         <button
@@ -99,8 +92,7 @@ function HomePage() {
                                 fontWeight: "600",
                             }}
                         >
-                            <div style={{ fontSize: "32px", marginBottom: "8px" }}>👨‍🏫</div>
-                            Enter as Teacher
+                            👨‍🏫 Enter as Teacher
                         </button>
                     </div>
                 </div>
