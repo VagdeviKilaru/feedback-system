@@ -8,7 +8,7 @@ from app.ai_processor import analyzer
 # Initialize FastAPI app
 # ----------------------------------
 app = FastAPI(
-    title="Real-Time Attention Monitoring System",
+    title="Live Feedback System",
     description="AI-powered student attention monitoring for online classes",
     version="1.0.0"
 )
