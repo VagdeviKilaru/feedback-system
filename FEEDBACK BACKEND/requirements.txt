@@ -3,15 +3,5 @@ uvicorn[standard]
 websockets
 python-dotenv
 pydantic
-python-multipart
 pydantic-settings
-```
-
-#### **File: `FEEDBACK/Procfile`**
-```
-web: cd "FEEDBACK BACKEND/app" && python -m uvicorn main:app --host 0.0.0.0 --port $PORT
-```
-
-#### **File: `FEEDBACK/runtime.txt`**
-```
-python-3.10.0
+python-multipart
