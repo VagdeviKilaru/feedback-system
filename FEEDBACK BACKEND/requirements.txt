@@ -3,5 +3,5 @@ uvicorn[standard]
 websockets
 python-dotenv
 pydantic
-pydantic-settings
 python-multipart
+pydantic-settings
