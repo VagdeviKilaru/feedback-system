@@ -41,9 +41,19 @@ export default function StudentView() {
         const pitch = Math.abs(features.head_pose?.pitch || 0);
         const yaw = Math.abs(features.head_pose?.yaw || 0);
 
-        if (ear < 0.2) return 'drowsy';
-        if (gazeX > 0.3 || gazeY > 0.25) return 'looking_away';
-        if (pitch > 30 || yaw > 30) return 'distracted';
+        // VERY SENSITIVE thresholds
+        if (ear < 0.28) {
+            console.log('🔴 DROWSY:', ear);
+            return 'drowsy';
+        }
+        if (gazeX > 0.15 || gazeY > 0.15) {
+            console.log('👀 LOOKING AWAY:', gazeX, gazeY);
+            return 'looking_away';
+        }
+        if (pitch > 15 || yaw > 15) {
+            console.log('⚠️ DISTRACTED:', pitch, yaw);
+            return 'distracted';
+        }
 
         return 'attentive';
     };
@@ -56,8 +66,13 @@ export default function StudentView() {
 
             const status = analyzeAttention(extractedFeatures);
             setCurrentStatus(status);
+
+            // Mark camera as active when receiving results
+            if (!cameraActive) {
+                setCameraActive(true);
+            }
         }
-    }, []);
+    }, [cameraActive]);
 
     const handleVideoReady = useCallback(async (video) => {
         if (!video || !isJoined) return;
@@ -68,11 +83,9 @@ export default function StudentView() {
             console.log('Initializing MediaPipe...');
             const { faceMesh, camera } = await initializeMediaPipe(video, handleMediaPipeResults);
             mediaPipeRef.current = { faceMesh, camera };
-            setCameraActive(true);
             console.log('✅ MediaPipe initialized successfully');
         } catch (err) {
             console.error('❌ MediaPipe initialization error:', err);
-            setCameraActive(false);
             setError('Failed to initialize face detection');
         }
     }, [isJoined, handleMediaPipeResults]);
@@ -110,7 +123,7 @@ export default function StudentView() {
         };
     }, [isJoined, roomId, studentId, studentName]);
 
-    // Send attention updates
+    // Send attention updates every 500ms (faster)
     useEffect(() => {
         if (!isJoined || !isConnected) return;
 
@@ -120,16 +133,16 @@ export default function StudentView() {
                     type: 'attention_update',
                     data: latestFeaturesRef.current,
                 });
-                console.log('📤 Sent attention update');
+                console.log('📤 Sent:', currentStatus);
             }
-        }, 1000);
+        }, 500);  // Changed from 1000ms to 500ms
 
         return () => {
             if (updateIntervalRef.current) {
                 clearInterval(updateIntervalRef.current);
             }
         };
-    }, [isJoined, isConnected]);
+    }, [isJoined, isConnected, currentStatus]);
 
     const handleJoinClass = () => {
         if (studentName.trim() && roomId.trim()) {
@@ -156,18 +169,19 @@ export default function StudentView() {
                 alignItems: 'center',
                 justifyContent: 'center',
                 minHeight: '100vh',
-                backgroundColor: '#f9fafb',
+                background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
                 padding: '20px',
             }}>
                 <div style={{
                     backgroundColor: 'white',
                     padding: '40px',
-                    borderRadius: '16px',
-                    boxShadow: '0 10px 25px rgba(0, 0, 0, 0.1)',
+                    borderRadius: '20px',
+                    boxShadow: '0 20px 60px rgba(0, 0, 0, 0.3)',
                     maxWidth: '450px',
                     width: '100%',
                 }}>
                     <div style={{ textAlign: 'center', marginBottom: '32px' }}>
+                        <div style={{ fontSize: '64px', marginBottom: '16px' }}>🎓</div>
                         <h1 style={{
                             fontSize: '32px',
                             fontWeight: 'bold',
@@ -188,7 +202,7 @@ export default function StudentView() {
                         <label style={{
                             display: 'block',
                             fontSize: '14px',
-                            fontWeight: '500',
+                            fontWeight: '600',
                             marginBottom: '8px',
                             color: '#374151',
                         }}>
@@ -201,13 +215,14 @@ export default function StudentView() {
                             placeholder="Enter your name"
                             style={{
                                 width: '100%',
-                                padding: '12px',
+                                padding: '14px',
                                 border: '2px solid #e5e7eb',
-                                borderRadius: '8px',
+                                borderRadius: '10px',
                                 fontSize: '16px',
                                 outline: 'none',
+                                transition: 'all 0.2s',
                             }}
-                            onFocus={(e) => e.target.style.borderColor = '#3b82f6'}
+                            onFocus={(e) => e.target.style.borderColor = '#667eea'}
                             onBlur={(e) => e.target.style.borderColor = '#e5e7eb'}
                         />
                     </div>
@@ -216,7 +231,7 @@ export default function StudentView() {
                         <label style={{
                             display: 'block',
                             fontSize: '14px',
-                            fontWeight: '500',
+                            fontWeight: '600',
                             marginBottom: '8px',
                             color: '#374151',
                         }}>
@@ -231,18 +246,19 @@ export default function StudentView() {
                             maxLength={6}
                             style={{
                                 width: '100%',
-                                padding: '12px',
+                                padding: '14px',
                                 border: '2px solid #e5e7eb',
-                                borderRadius: '8px',
-                                fontSize: '20px',
+                                borderRadius: '10px',
+                                fontSize: '24px',
                                 outline: 'none',
                                 textTransform: 'uppercase',
-                                letterSpacing: '6px',
+                                letterSpacing: '8px',
                                 fontFamily: 'monospace',
                                 fontWeight: 'bold',
                                 textAlign: 'center',
+                                transition: 'all 0.2s',
                             }}
-                            onFocus={(e) => e.target.style.borderColor = '#3b82f6'}
+                            onFocus={(e) => e.target.style.borderColor = '#667eea'}
                             onBlur={(e) => e.target.style.borderColor = '#e5e7eb'}
                         />
                         <div style={{
@@ -260,28 +276,42 @@ export default function StudentView() {
                         disabled={!studentName.trim() || !roomId.trim() || roomId.length < 6}
                         style={{
                             width: '100%',
-                            padding: '14px',
-                            backgroundColor: (studentName.trim() && roomId.trim() && roomId.length === 6) ? '#3b82f6' : '#d1d5db',
+                            padding: '16px',
+                            background: (studentName.trim() && roomId.trim() && roomId.length === 6)
+                                ? 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'
+                                : '#d1d5db',
                             color: 'white',
                             border: 'none',
-                            borderRadius: '8px',
-                            fontSize: '16px',
-                            fontWeight: '600',
+                            borderRadius: '10px',
+                            fontSize: '18px',
+                            fontWeight: '700',
                             cursor: (studentName.trim() && roomId.trim() && roomId.length === 6) ? 'pointer' : 'not-allowed',
-                            transition: 'all 0.2s',
+                            transition: 'all 0.3s',
+                            boxShadow: '0 4px 15px rgba(102, 126, 234, 0.4)',
+                        }}
+                        onMouseEnter={(e) => {
+                            if (studentName.trim() && roomId.trim() && roomId.length === 6) {
+                                e.target.style.transform = 'translateY(-2px)';
+                                e.target.style.boxShadow = '0 6px 20px rgba(102, 126, 234, 0.6)';
+                            }
+                        }}
+                        onMouseLeave={(e) => {
+                            e.target.style.transform = 'translateY(0)';
+                            e.target.style.boxShadow = '0 4px 15px rgba(102, 126, 234, 0.4)';
                         }}
                     >
                         Join Class
                     </button>
 
                     <div style={{
-                        marginTop: '20px',
-                        padding: '14px',
-                        backgroundColor: '#eff6ff',
-                        borderRadius: '8px',
+                        marginTop: '24px',
+                        padding: '16px',
+                        background: 'linear-gradient(135deg, #fef3c7 0%, #fcd34d 100%)',
+                        borderRadius: '10px',
                         fontSize: '13px',
-                        color: '#1e40af',
-                        lineHeight: '1.5',
+                        color: '#92400e',
+                        lineHeight: '1.6',
+                        fontWeight: '500',
                     }}>
                         <strong>📹 Note:</strong> Camera access required. Your attention will be monitored in real-time.
                     </div>
@@ -293,7 +323,7 @@ export default function StudentView() {
     return (
         <div style={{
             minHeight: '100vh',
-            backgroundColor: '#f9fafb',
+            background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
             padding: '20px',
         }}>
             {/* Header */}
@@ -301,18 +331,18 @@ export default function StudentView() {
                 backgroundColor: 'white',
                 padding: '16px 24px',
                 marginBottom: '20px',
-                borderRadius: '12px',
-                boxShadow: '0 2px 4px rgba(0, 0, 0, 0.05)',
+                borderRadius: '16px',
+                boxShadow: '0 10px 30px rgba(0, 0, 0, 0.2)',
                 display: 'flex',
                 justifyContent: 'space-between',
                 alignItems: 'center',
             }}>
                 <div>
-                    <h2 style={{ fontSize: '20px', fontWeight: 'bold', color: '#111827', margin: 0 }}>
-                        Student View
+                    <h2 style={{ fontSize: '22px', fontWeight: 'bold', color: '#111827', margin: 0 }}>
+                        {studentName}
                     </h2>
                     <p style={{ margin: '4px 0 0 0', color: '#6b7280', fontSize: '14px' }}>
-                        {studentName} • Room: <span style={{ fontWeight: 'bold', fontFamily: 'monospace', letterSpacing: '2px' }}>{roomId}</span>
+                        Room: <span style={{ fontWeight: 'bold', fontFamily: 'monospace', letterSpacing: '2px', color: '#667eea' }}>{roomId}</span>
                     </p>
                 </div>
 
@@ -324,8 +354,8 @@ export default function StudentView() {
                         padding: '8px 16px',
                         backgroundColor: isConnected ? '#dcfce7' : '#fee2e2',
                         borderRadius: '20px',
-                        fontSize: '14px',
-                        fontWeight: '500',
+                        fontSize: '13px',
+                        fontWeight: '600',
                     }}>
                         <div style={{
                             width: '8px',
@@ -334,17 +364,6 @@ export default function StudentView() {
                             backgroundColor: isConnected ? '#22c55e' : '#ef4444',
                         }} />
                         {isConnected ? 'Connected' : 'Disconnected'}
-                    </div>
-
-                    <div style={{
-                        padding: '8px 16px',
-                        backgroundColor: cameraActive ? '#dcfce7' : '#fee2e2',
-                        borderRadius: '20px',
-                        fontSize: '14px',
-                        fontWeight: '500',
-                        color: cameraActive ? '#166534' : '#991b1b',
-                    }}>
-                        📹 {cameraActive ? 'Camera Active' : 'Camera Inactive'}
                     </div>
 
                     <button
@@ -357,10 +376,10 @@ export default function StudentView() {
                             borderRadius: '8px',
                             cursor: 'pointer',
                             fontSize: '14px',
-                            fontWeight: '500',
+                            fontWeight: '600',
                         }}
                     >
-                        Leave Class
+                        Leave
                     </button>
                 </div>
             </div>
@@ -385,8 +404,8 @@ export default function StudentView() {
             <div style={{
                 backgroundColor: 'white',
                 padding: '24px',
-                borderRadius: '12px',
-                boxShadow: '0 2px 4px rgba(0, 0, 0, 0.05)',
+                borderRadius: '16px',
+                boxShadow: '0 10px 30px rgba(0, 0, 0, 0.2)',
             }}>
                 <h3 style={{ fontSize: '18px', fontWeight: '600', marginBottom: '16px', color: '#111827' }}>
                     Your Camera View
@@ -400,36 +419,57 @@ export default function StudentView() {
                         showMirror={true}
                     />
 
-                    <div style={{ marginTop: '16px', textAlign: 'center' }}>
+                    <div style={{ marginTop: '20px', textAlign: 'center' }}>
                         <div style={{
                             display: 'inline-block',
-                            padding: '12px 24px',
-                            borderRadius: '24px',
+                            padding: '14px 32px',
+                            borderRadius: '30px',
                             backgroundColor: getStatusColor(currentStatus),
                             color: 'white',
                             fontWeight: 'bold',
-                            fontSize: '16px',
+                            fontSize: '18px',
+                            boxShadow: `0 4px 15px ${getStatusColor(currentStatus)}66`,
                         }}>
-                            STATUS: {currentStatus.replace('_', ' ').toUpperCase()}
+                            {currentStatus.replace('_', ' ').toUpperCase()}
                         </div>
                     </div>
 
                     {features && (
                         <div style={{
-                            marginTop: '16px',
+                            marginTop: '20px',
                             padding: '16px',
-                            backgroundColor: '#f3f4f6',
-                            borderRadius: '8px',
+                            background: 'linear-gradient(135deg, #f3f4f6 0%, #e5e7eb 100%)',
+                            borderRadius: '12px',
                             fontSize: '13px',
                         }}>
-                            <div style={{ fontWeight: 'bold', marginBottom: '8px', color: '#374151' }}>📊 Debug Information:</div>
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', color: '#4b5563' }}>
-                                <div>Eye Ratio: <strong>{features.eye_aspect_ratio?.toFixed(3)}</strong></div>
-                                <div>Gaze X: <strong>{features.gaze_direction?.x?.toFixed(3)}</strong></div>
-                                <div>Gaze Y: <strong>{features.gaze_direction?.y?.toFixed(3)}</strong></div>
-                                <div>Head Pitch: <strong>{features.head_pose?.pitch}°</strong></div>
-                                <div>Head Yaw: <strong>{features.head_pose?.yaw}°</strong></div>
-                                <div>Head Roll: <strong>{features.head_pose?.roll}°</strong></div>
+                            <div style={{ fontWeight: 'bold', marginBottom: '12px', color: '#374151', fontSize: '14px' }}>📊 Detection Metrics</div>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', color: '#4b5563' }}>
+                                <div style={{ padding: '8px', backgroundColor: 'white', borderRadius: '6px' }}>
+                                    <div style={{ fontSize: '11px', color: '#6b7280' }}>Eye Ratio</div>
+                                    <div style={{ fontSize: '16px', fontWeight: 'bold' }}>{features.eye_aspect_ratio?.toFixed(3)}</div>
+                                </div>
+                                <div style={{ padding: '8px', backgroundColor: 'white', borderRadius: '6px' }}>
+                                    <div style={{ fontSize: '11px', color: '#6b7280' }}>Gaze X</div>
+                                    <div style={{ fontSize: '16px', fontWeight: 'bold' }}>{features.gaze_direction?.x?.toFixed(3)}</div>
+                                </div>
+                                <div style={{ padding: '8px', backgroundColor: 'white', borderRadius: '6px' }}>
+                                    <div style={{ fontSize: '11px', color: '#6b7280' }}>Gaze Y</div>
+                                    <div style={{ fontSize: '16px', fontWeight: 'bold' }}>{features.gaze_direction?.y?.toFixed(3)}</div>
+                                </div>
+                                <div style={{ padding: '8px', backgroundColor: 'white', borderRadius: '6px' }}>
+                                    <div style={{ fontSize: '11px', color: '#6b7280' }}>Head Pitch</div>
+                                    <div style={{ fontSize: '16px', fontWeight: 'bold' }}>{features.head_pose?.pitch}°</div>
+                                </div>
+                                <div style={{ padding: '8px', backgroundColor: 'white', borderRadius: '6px' }}>
+                                    <div style={{ fontSize: '11px', color: '#6b7280' }}>Head Yaw</div>
+                                    <div style={{ fontSize: '16px', fontWeight: 'bold' }}>{features.head_pose?.yaw}°</div>
+                                </div>
+                                <div style={{ padding: '8px', backgroundColor: 'white', borderRadius: '6px' }}>
+                                    <div style={{ fontSize: '11px', color: '#6b7280' }}>Camera</div>
+                                    <div style={{ fontSize: '16px', fontWeight: 'bold', color: cameraActive ? '#22c55e' : '#ef4444' }}>
+                                        {cameraActive ? '✓ Active' : '✗ Inactive'}
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     )}
