@@ -32,6 +32,16 @@ export default function StudentView() {
         return colors[status] || '#6b7280';
     };
 
+    const getStatusLabel = (status) => {
+        const labels = {
+            attentive: 'ATTENTIVE',
+            looking_away: 'LOOKING AWAY',
+            drowsy: 'DROWSY',
+            distracted: 'DISTRACTED',
+        };
+        return labels[status] || 'UNKNOWN';
+    };
+
     const analyzeAttention = (features) => {
         if (!features) return 'attentive';
 
@@ -70,6 +80,7 @@ export default function StudentView() {
             // Mark camera as active when receiving results
             if (!cameraActive) {
                 setCameraActive(true);
+                setError(null); // Clear any errors
             }
         }
     }, [cameraActive]);
@@ -79,14 +90,43 @@ export default function StudentView() {
 
         videoRef.current = video;
 
+        // Show loading
+        setError('Initializing face detection... Please wait.');
+
         try {
-            console.log('Initializing MediaPipe...');
-            const { faceMesh, camera } = await initializeMediaPipe(video, handleMediaPipeResults);
-            mediaPipeRef.current = { faceMesh, camera };
-            console.log('✅ MediaPipe initialized successfully');
+            console.log('🎬 Initializing MediaPipe...');
+
+            // Add retry logic
+            let retries = 3;
+            let lastError;
+
+            while (retries > 0) {
+                try {
+                    const { faceMesh, camera } = await initializeMediaPipe(video, handleMediaPipeResults);
+                    mediaPipeRef.current = { faceMesh, camera };
+                    setError(null); // Clear error on success
+                    console.log('✅ MediaPipe initialized successfully');
+                    return; // Success!
+                } catch (err) {
+                    lastError = err;
+                    retries--;
+                    console.warn(`⚠️ Attempt failed, ${retries} retries left...`);
+                    if (retries > 0) {
+                        await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds
+                    }
+                }
+            }
+
+            // All retries failed
+            throw lastError;
+
         } catch (err) {
             console.error('❌ MediaPipe initialization error:', err);
-            setError('Failed to initialize face detection');
+            setCameraActive(false);
+            setError('Automatic detection unavailable. Using manual mode.');
+
+            // Continue without face detection - student can still attend
+            console.log('⚠️ Continuing in manual mode...');
         }
     }, [isJoined, handleMediaPipeResults]);
 
@@ -108,7 +148,6 @@ export default function StudentView() {
             .then(() => {
                 console.log('✅ WebSocket connected');
                 setIsConnected(true);
-                setError(null);
             })
             .catch((err) => {
                 console.error('❌ WebSocket connection error:', err);
@@ -128,7 +167,7 @@ export default function StudentView() {
         if (!isJoined || !isConnected) return;
 
         updateIntervalRef.current = setInterval(() => {
-            if (latestFeaturesRef.current && wsRef.current?.isConnected()) {
+            if (latestFeaturesRef.current && wsRef.current?.isConnected() && cameraActive) {
                 wsRef.current.send({
                     type: 'attention_update',
                     data: latestFeaturesRef.current,
@@ -142,7 +181,41 @@ export default function StudentView() {
                 clearInterval(updateIntervalRef.current);
             }
         };
-    }, [isJoined, isConnected, currentStatus]);
+    }, [isJoined, isConnected, currentStatus, cameraActive]);
+
+    // Fallback: Send attentive status even without face detection
+    useEffect(() => {
+        if (!isJoined || !isConnected) return;
+        if (cameraActive) return; // Don't use fallback if face detection works
+
+        console.log('⚠️ Using fallback mode - sending manual status');
+
+        const fallbackInterval = setInterval(() => {
+            if (wsRef.current?.isConnected()) {
+                // Send current status set by manual controls
+                wsRef.current.send({
+                    type: 'attention_update',
+                    data: {
+                        eye_aspect_ratio: currentStatus === 'drowsy' ? 0.15 : 0.3,
+                        gaze_direction: {
+                            x: currentStatus === 'looking_away' ? 0.3 : 0,
+                            y: currentStatus === 'looking_away' ? 0.3 : 0
+                        },
+                        head_pose: {
+                            pitch: currentStatus === 'distracted' ? 25 : 0,
+                            yaw: currentStatus === 'distracted' ? 25 : 0,
+                            roll: 0
+                        },
+                        timestamp: Date.now(),
+                        fallback: true
+                    },
+                });
+                console.log('📤 Sent manual status:', currentStatus);
+            }
+        }, 2000); // Every 2 seconds
+
+        return () => clearInterval(fallbackInterval);
+    }, [isJoined, isConnected, cameraActive, currentStatus]);
 
     const handleJoinClass = () => {
         if (studentName.trim() && roomId.trim()) {
@@ -336,6 +409,8 @@ export default function StudentView() {
                 display: 'flex',
                 justifyContent: 'space-between',
                 alignItems: 'center',
+                flexWrap: 'wrap',
+                gap: '12px',
             }}>
                 <div>
                     <h2 style={{ fontSize: '22px', fontWeight: 'bold', color: '#111827', margin: 0 }}>
@@ -346,7 +421,7 @@ export default function StudentView() {
                     </p>
                 </div>
 
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
                     <div style={{
                         display: 'flex',
                         alignItems: 'center',
@@ -384,12 +459,12 @@ export default function StudentView() {
                 </div>
             </div>
 
-            {/* Error Message */}
+            {/* Error/Info Message */}
             {error && (
                 <div style={{
-                    backgroundColor: '#fee2e2',
-                    border: '2px solid #ef4444',
-                    color: '#991b1b',
+                    backgroundColor: error.includes('unavailable') ? '#fef3c7' : '#fee2e2',
+                    border: `2px solid ${error.includes('unavailable') ? '#f59e0b' : '#ef4444'}`,
+                    color: error.includes('unavailable') ? '#92400e' : '#991b1b',
                     padding: '16px',
                     borderRadius: '12px',
                     marginBottom: '20px',
@@ -430,11 +505,93 @@ export default function StudentView() {
                             fontSize: '18px',
                             boxShadow: `0 4px 15px ${getStatusColor(currentStatus)}66`,
                         }}>
-                            {currentStatus.replace('_', ' ').toUpperCase()}
+                            {getStatusLabel(currentStatus)}
                         </div>
                     </div>
 
-                    {features && (
+                    {/* Manual Status Controls (Fallback) */}
+                    {!cameraActive && isConnected && (
+                        <div style={{
+                            marginTop: '20px',
+                            padding: '20px',
+                            background: 'linear-gradient(135deg, #fef3c7 0%, #fcd34d 100%)',
+                            borderRadius: '12px',
+                            textAlign: 'center',
+                        }}>
+                            <div style={{ fontSize: '14px', fontWeight: '600', marginBottom: '12px', color: '#92400e' }}>
+                                ⚠️ Automatic detection unavailable. Use manual controls:
+                            </div>
+                            <div style={{ display: 'flex', gap: '10px', justifyContent: 'center', flexWrap: 'wrap' }}>
+                                <button
+                                    onClick={() => setCurrentStatus('attentive')}
+                                    style={{
+                                        padding: '12px 24px',
+                                        background: currentStatus === 'attentive' ? '#22c55e' : '#d1d5db',
+                                        color: 'white',
+                                        border: 'none',
+                                        borderRadius: '8px',
+                                        fontSize: '14px',
+                                        fontWeight: '600',
+                                        cursor: 'pointer',
+                                        transition: 'all 0.2s',
+                                    }}
+                                >
+                                    ✓ I'm Attentive
+                                </button>
+                                <button
+                                    onClick={() => setCurrentStatus('looking_away')}
+                                    style={{
+                                        padding: '12px 24px',
+                                        background: currentStatus === 'looking_away' ? '#f59e0b' : '#d1d5db',
+                                        color: 'white',
+                                        border: 'none',
+                                        borderRadius: '8px',
+                                        fontSize: '14px',
+                                        fontWeight: '600',
+                                        cursor: 'pointer',
+                                        transition: 'all 0.2s',
+                                    }}
+                                >
+                                    👀 Looking Away
+                                </button>
+                                <button
+                                    onClick={() => setCurrentStatus('drowsy')}
+                                    style={{
+                                        padding: '12px 24px',
+                                        background: currentStatus === 'drowsy' ? '#ef4444' : '#d1d5db',
+                                        color: 'white',
+                                        border: 'none',
+                                        borderRadius: '8px',
+                                        fontSize: '14px',
+                                        fontWeight: '600',
+                                        cursor: 'pointer',
+                                        transition: 'all 0.2s',
+                                    }}
+                                >
+                                    😴 Drowsy
+                                </button>
+                                <button
+                                    onClick={() => setCurrentStatus('distracted')}
+                                    style={{
+                                        padding: '12px 24px',
+                                        background: currentStatus === 'distracted' ? '#f97316' : '#d1d5db',
+                                        color: 'white',
+                                        border: 'none',
+                                        borderRadius: '8px',
+                                        fontSize: '14px',
+                                        fontWeight: '600',
+                                        cursor: 'pointer',
+                                        transition: 'all 0.2s',
+                                    }}
+                                >
+                                    ⚠️ Distracted
+                                </button>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Debug Info (Only show if camera is active) */}
+                    {features && cameraActive && (
                         <div style={{
                             marginTop: '20px',
                             padding: '16px',
@@ -443,7 +600,7 @@ export default function StudentView() {
                             fontSize: '13px',
                         }}>
                             <div style={{ fontWeight: 'bold', marginBottom: '12px', color: '#374151', fontSize: '14px' }}>📊 Detection Metrics</div>
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', color: '#4b5563' }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '10px', color: '#4b5563' }}>
                                 <div style={{ padding: '8px', backgroundColor: 'white', borderRadius: '6px' }}>
                                     <div style={{ fontSize: '11px', color: '#6b7280' }}>Eye Ratio</div>
                                     <div style={{ fontSize: '16px', fontWeight: 'bold' }}>{features.eye_aspect_ratio?.toFixed(3)}</div>
@@ -465,9 +622,9 @@ export default function StudentView() {
                                     <div style={{ fontSize: '16px', fontWeight: 'bold' }}>{features.head_pose?.yaw}°</div>
                                 </div>
                                 <div style={{ padding: '8px', backgroundColor: 'white', borderRadius: '6px' }}>
-                                    <div style={{ fontSize: '11px', color: '#6b7280' }}>Camera</div>
-                                    <div style={{ fontSize: '16px', fontWeight: 'bold', color: cameraActive ? '#22c55e' : '#ef4444' }}>
-                                        {cameraActive ? '✓ Active' : '✗ Inactive'}
+                                    <div style={{ fontSize: '11px', color: '#6b7280' }}>Detection</div>
+                                    <div style={{ fontSize: '16px', fontWeight: 'bold', color: '#22c55e' }}>
+                                        ✓ Active
                                     </div>
                                 </div>
                             </div>
