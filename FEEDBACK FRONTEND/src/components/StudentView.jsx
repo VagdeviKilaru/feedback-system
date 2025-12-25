@@ -164,25 +164,25 @@ export default function StudentView() {
                     padding: '40px',
                     borderRadius: '16px',
                     boxShadow: '0 10px 25px rgba(0, 0, 0, 0.1)',
-                    maxWidth: '400px',
+                    maxWidth: '450px',
                     width: '100%',
                 }}>
-                    <h1 style={{
-                        fontSize: '28px',
-                        fontWeight: 'bold',
-                        marginBottom: '8px',
-                        color: '#111827',
-                        textAlign: 'center',
-                    }}>
-                        Join Online Class
-                    </h1>
-                    <p style={{
-                        color: '#6b7280',
-                        marginBottom: '24px',
-                        textAlign: 'center',
-                    }}>
-                        Enter your name and room code to join
-                    </p>
+                    <div style={{ textAlign: 'center', marginBottom: '32px' }}>
+                        <h1 style={{
+                            fontSize: '32px',
+                            fontWeight: 'bold',
+                            marginBottom: '8px',
+                            color: '#111827',
+                        }}>
+                            Join Online Class
+                        </h1>
+                        <p style={{
+                            color: '#6b7280',
+                            fontSize: '15px',
+                        }}>
+                            Enter your details to join
+                        </p>
+                    </div>
 
                     <div style={{ marginBottom: '24px' }}>
                         <label style={{
@@ -207,10 +207,12 @@ export default function StudentView() {
                                 fontSize: '16px',
                                 outline: 'none',
                             }}
+                            onFocus={(e) => e.target.style.borderColor = '#3b82f6'}
+                            onBlur={(e) => e.target.style.borderColor = '#e5e7eb'}
                         />
                     </div>
 
-                    <div style={{ marginBottom: '24px' }}>
+                    <div style={{ marginBottom: '28px' }}>
                         <label style={{
                             display: 'block',
                             fontSize: '14px',
@@ -225,21 +227,23 @@ export default function StudentView() {
                             value={roomId}
                             onChange={(e) => setRoomId(e.target.value.toUpperCase())}
                             onKeyPress={(e) => e.key === 'Enter' && handleJoinClass()}
-                            placeholder="Enter 6-digit room code"
+                            placeholder="Enter 6-digit code"
                             maxLength={6}
                             style={{
                                 width: '100%',
                                 padding: '12px',
                                 border: '2px solid #e5e7eb',
                                 borderRadius: '8px',
-                                fontSize: '18px',
+                                fontSize: '20px',
                                 outline: 'none',
                                 textTransform: 'uppercase',
-                                letterSpacing: '4px',
+                                letterSpacing: '6px',
                                 fontFamily: 'monospace',
                                 fontWeight: 'bold',
                                 textAlign: 'center',
                             }}
+                            onFocus={(e) => e.target.style.borderColor = '#3b82f6'}
+                            onBlur={(e) => e.target.style.borderColor = '#e5e7eb'}
                         />
                         <div style={{
                             fontSize: '12px',
@@ -253,17 +257,18 @@ export default function StudentView() {
 
                     <button
                         onClick={handleJoinClass}
-                        disabled={!studentName.trim() || !roomId.trim()}
+                        disabled={!studentName.trim() || !roomId.trim() || roomId.length < 6}
                         style={{
                             width: '100%',
                             padding: '14px',
-                            backgroundColor: (studentName.trim() && roomId.trim()) ? '#3b82f6' : '#d1d5db',
+                            backgroundColor: (studentName.trim() && roomId.trim() && roomId.length === 6) ? '#3b82f6' : '#d1d5db',
                             color: 'white',
                             border: 'none',
                             borderRadius: '8px',
                             fontSize: '16px',
                             fontWeight: '600',
-                            cursor: (studentName.trim() && roomId.trim()) ? 'pointer' : 'not-allowed',
+                            cursor: (studentName.trim() && roomId.trim() && roomId.length === 6) ? 'pointer' : 'not-allowed',
+                            transition: 'all 0.2s',
                         }}
                     >
                         Join Class
@@ -271,13 +276,14 @@ export default function StudentView() {
 
                     <div style={{
                         marginTop: '20px',
-                        padding: '12px',
+                        padding: '14px',
                         backgroundColor: '#eff6ff',
                         borderRadius: '8px',
-                        fontSize: '12px',
+                        fontSize: '13px',
                         color: '#1e40af',
+                        lineHeight: '1.5',
                     }}>
-                        <strong>Note:</strong> Camera access required. Your attention will be monitored.
+                        <strong>📹 Note:</strong> Camera access required. Your attention will be monitored in real-time.
                     </div>
                 </div>
             </div>
@@ -306,7 +312,7 @@ export default function StudentView() {
                         Student View
                     </h2>
                     <p style={{ margin: '4px 0 0 0', color: '#6b7280', fontSize: '14px' }}>
-                        Welcome, {studentName} • Room: {roomId}
+                        {studentName} • Room: <span style={{ fontWeight: 'bold', fontFamily: 'monospace', letterSpacing: '2px' }}>{roomId}</span>
                     </p>
                 </div>
 
@@ -404,7 +410,7 @@ export default function StudentView() {
                             fontWeight: 'bold',
                             fontSize: '16px',
                         }}>
-                            {currentStatus.replace('_', ' ').toUpperCase()}
+                            STATUS: {currentStatus.replace('_', ' ').toUpperCase()}
                         </div>
                     </div>
 
@@ -416,14 +422,14 @@ export default function StudentView() {
                             borderRadius: '8px',
                             fontSize: '13px',
                         }}>
-                            <div style={{ fontWeight: 'bold', marginBottom: '8px' }}>Debug Information:</div>
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-                                <div>Eye Ratio: {features.eye_aspect_ratio?.toFixed(3)}</div>
-                                <div>Gaze X: {features.gaze_direction?.x?.toFixed(3)}</div>
-                                <div>Gaze Y: {features.gaze_direction?.y?.toFixed(3)}</div>
-                                <div>Head Pitch: {features.head_pose?.pitch}°</div>
-                                <div>Head Yaw: {features.head_pose?.yaw}°</div>
-                                <div>Head Roll: {features.head_pose?.roll}°</div>
+                            <div style={{ fontWeight: 'bold', marginBottom: '8px', color: '#374151' }}>📊 Debug Information:</div>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', color: '#4b5563' }}>
+                                <div>Eye Ratio: <strong>{features.eye_aspect_ratio?.toFixed(3)}</strong></div>
+                                <div>Gaze X: <strong>{features.gaze_direction?.x?.toFixed(3)}</strong></div>
+                                <div>Gaze Y: <strong>{features.gaze_direction?.y?.toFixed(3)}</strong></div>
+                                <div>Head Pitch: <strong>{features.head_pose?.pitch}°</strong></div>
+                                <div>Head Yaw: <strong>{features.head_pose?.yaw}°</strong></div>
+                                <div>Head Roll: <strong>{features.head_pose?.roll}°</strong></div>
                             </div>
                         </div>
                     )}

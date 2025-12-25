@@ -19,27 +19,29 @@ function HomePage() {
                 {/* Logo/Title */}
                 <div style={{ marginBottom: '40px' }}>
                     <h1 style={{
-                        fontSize: '48px',
+                        fontSize: '52px',
                         fontWeight: 'bold',
                         background: 'linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%)',
                         WebkitBackgroundClip: 'text',
                         WebkitTextFillColor: 'transparent',
                         marginBottom: '16px',
+                        lineHeight: '1.2',
                     }}>
-                        Attention Monitoring System
+                        Live Feedback System
                     </h1>
                     <p style={{
-                        fontSize: '18px',
-                        color: '#6b7280',
+                        fontSize: '20px',
+                        color: '#4b5563',
                         marginBottom: '8px',
+                        fontWeight: '500',
                     }}>
-                        Real-Time AI-Powered Student Attention Tracking
+                        Real-Time Student Feedback Generator & Attention Tracker
                     </p>
                     <p style={{
                         fontSize: '14px',
                         color: '#9ca3af',
                     }}>
-                        Powered by MediaPipe & FastAPI
+                        Powered by AI & MediaPipe Technology
                     </p>
                 </div>
 
@@ -91,10 +93,10 @@ function HomePage() {
                     }}>
                         <div style={{ fontSize: '36px', marginBottom: '12px' }}>⚡</div>
                         <h3 style={{ fontSize: '16px', fontWeight: '600', marginBottom: '8px', color: '#111827' }}>
-                            Real-Time Alerts
+                            Real-Time Feedback
                         </h3>
                         <p style={{ fontSize: '14px', color: '#6b7280', lineHeight: '1.5' }}>
-                            Instant notifications to teachers via WebSocket
+                            Instant alerts and feedback to teachers
                         </p>
                     </div>
                 </div>
@@ -298,7 +300,7 @@ function HomePage() {
                                 </h4>
                             </div>
                             <p style={{ fontSize: '13px', color: '#6b7280', marginLeft: '44px', lineHeight: '1.5' }}>
-                                AI analyzes attention and sends instant alerts to the teacher
+                                AI analyzes attention and generates instant feedback
                             </p>
                         </div>
                     </div>
@@ -326,7 +328,7 @@ function HomePage() {
                         gap: '12px',
                         justifyContent: 'center',
                     }}>
-                        {['React', 'Vite', 'MediaPipe', 'FastAPI', 'WebSockets', 'Python'].map(tech => (
+                        {['React', 'Vite', 'MediaPipe', 'FastAPI', 'WebSockets', 'Python', 'AI/ML'].map(tech => (
                             <span
                                 key={tech}
                                 style={{

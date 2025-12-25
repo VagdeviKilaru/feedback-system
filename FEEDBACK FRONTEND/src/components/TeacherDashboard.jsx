@@ -48,6 +48,7 @@ export default function TeacherDashboard() {
             case 'room_created':
                 setRoomId(message.data.room_id);
                 setStudents(message.data.students || []);
+                console.log('✅ Room created with ID:', message.data.room_id);
                 break;
 
             case 'student_join':
@@ -217,14 +218,14 @@ export default function TeacherDashboard() {
                             margin: 0,
                             marginBottom: '4px',
                         }}>
-                            Teacher Dashboard
+                            Live Feedback System
                         </h1>
                         <p style={{
                             margin: 0,
                             color: '#6b7280',
                             fontSize: '14px',
                         }}>
-                            Real-Time Attention Monitoring System
+                            Real-Time Student Feedback Generator & Attention Tracker
                         </p>
                     </div>
 
@@ -271,21 +272,29 @@ export default function TeacherDashboard() {
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'space-between',
-                        padding: '16px 20px',
+                        padding: '20px 24px',
                         backgroundColor: '#eff6ff',
                         borderRadius: '12px',
-                        border: '2px solid #3b82f6',
+                        border: '3px solid #3b82f6',
                         marginBottom: '16px',
+                        boxShadow: '0 4px 6px rgba(59, 130, 246, 0.1)',
                     }}>
                         <div>
-                            <div style={{ fontSize: '12px', color: '#1e40af', marginBottom: '4px', fontWeight: '500' }}>
-                                📋 Room Code (Share with students):
+                            <div style={{
+                                fontSize: '13px',
+                                color: '#1e40af',
+                                marginBottom: '8px',
+                                fontWeight: '600',
+                                textTransform: 'uppercase',
+                                letterSpacing: '1px',
+                            }}>
+                                📋 Room Code - Share with Students
                             </div>
                             <div style={{
-                                fontSize: '36px',
+                                fontSize: '42px',
                                 fontWeight: 'bold',
                                 color: '#1e3a8a',
-                                letterSpacing: '6px',
+                                letterSpacing: '8px',
                                 fontFamily: 'monospace',
                             }}>
                                 {roomId}
@@ -294,17 +303,26 @@ export default function TeacherDashboard() {
                         <button
                             onClick={copyRoomCode}
                             style={{
-                                padding: '12px 24px',
+                                padding: '14px 28px',
                                 backgroundColor: '#3b82f6',
                                 color: 'white',
                                 border: 'none',
                                 borderRadius: '8px',
                                 cursor: 'pointer',
-                                fontSize: '14px',
+                                fontSize: '15px',
                                 fontWeight: '600',
                                 display: 'flex',
                                 alignItems: 'center',
                                 gap: '8px',
+                                transition: 'all 0.2s',
+                            }}
+                            onMouseEnter={(e) => {
+                                e.target.style.backgroundColor = '#2563eb';
+                                e.target.style.transform = 'scale(1.05)';
+                            }}
+                            onMouseLeave={(e) => {
+                                e.target.style.backgroundColor = '#3b82f6';
+                                e.target.style.transform = 'scale(1)';
                             }}
                         >
                             📋 Copy Code
@@ -442,7 +460,7 @@ export default function TeacherDashboard() {
                             }}>
                                 <div style={{ fontSize: '64px', marginBottom: '16px' }}>👥</div>
                                 <div style={{ fontWeight: '600', marginBottom: '8px' }}>No students connected yet</div>
-                                <div>Share the room code with students to get started</div>
+                                <div>Share the room code <strong>{roomId}</strong> with students</div>
                             </div>
                         ) : (
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>

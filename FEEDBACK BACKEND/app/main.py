@@ -10,8 +10,8 @@ from app.ai_processor import analyzer
 
 # Initialize FastAPI app
 app = FastAPI(
-    title="Real-Time Attention Monitoring System",
-    description="AI-powered student attention monitoring for online classes",
+    title="Live Feedback System",
+    description="Real-Time Student Feedback Generator & Attention Tracker",
     version="1.0.0"
 )
 
@@ -28,7 +28,8 @@ app.add_middleware(
 @app.get("/")
 async def root():
     return {
-        "message": "Real-Time Attention Monitoring System API",
+        "message": "Live Feedback System API",
+        "description": "Real-Time Student Feedback Generator & Attention Tracker",
         "version": "1.0.0",
         "endpoints": {
             "student_websocket": "/ws/student/{room_id}/{student_id}",
@@ -80,6 +81,11 @@ async def student_websocket(
     
     # Check if room exists
     if not manager.room_exists(room_id):
+        await websocket.accept()
+        await websocket.send_json({
+            "type": "error",
+            "message": f"Room {room_id} not found. Please check the room code."
+        })
         await websocket.close(code=4004, reason="Room not found")
         print(f"❌ Student tried to join non-existent room: {room_id}")
         return
@@ -172,26 +178,43 @@ async def test_page():
     <!DOCTYPE html>
     <html>
     <head>
-        <title>WebSocket Test</title>
+        <title>WebSocket Test - Live Feedback System</title>
+        <style>
+            body { font-family: Arial, sans-serif; padding: 20px; background: #f5f5f5; }
+            .container { max-width: 1200px; margin: 0 auto; background: white; padding: 30px; border-radius: 8px; }
+            h1 { color: #333; }
+            button { padding: 10px 20px; margin: 5px; cursor: pointer; background: #3b82f6; color: white; border: none; border-radius: 4px; }
+            button:hover { background: #2563eb; }
+            input { padding: 8px; margin: 5px; border: 1px solid #ddd; border-radius: 4px; }
+            #messages { background: #f9f9f9; padding: 15px; border-radius: 4px; height: 400px; overflow-y: auto; font-family: monospace; font-size: 12px; }
+            .room-code { font-size: 24px; font-weight: bold; color: #3b82f6; letter-spacing: 2px; padding: 10px; background: #eff6ff; border-radius: 8px; display: inline-block; margin: 10px 0; }
+            .section { margin: 20px 0; padding: 15px; border: 1px solid #e5e7eb; border-radius: 8px; }
+        </style>
     </head>
     <body>
-        <h1>WebSocket Connection Test</h1>
-        <div>
-            <h2>Teacher Connection</h2>
-            <button onclick="connectTeacher()">Connect as Teacher</button>
-            <div id="roomCode"></div>
-        </div>
-        <div>
-            <h2>Student Connection</h2>
-            <input type="text" id="roomId" placeholder="Room ID">
-            <input type="text" id="studentId" placeholder="Student ID" value="student1">
-            <input type="text" id="studentName" placeholder="Student Name" value="John Doe">
-            <button onclick="connectStudent()">Connect as Student</button>
-            <button onclick="sendTestData()">Send Test Data</button>
-        </div>
-        <div>
-            <h3>Messages:</h3>
-            <pre id="messages"></pre>
+        <div class="container">
+            <h1>🎓 Live Feedback System - WebSocket Test</h1>
+            <p>Real-Time Student Feedback Generator & Attention Tracker</p>
+            
+            <div class="section">
+                <h2>👨‍🏫 Teacher Connection</h2>
+                <button onclick="connectTeacher()">Connect as Teacher</button>
+                <div id="roomCode"></div>
+            </div>
+            
+            <div class="section">
+                <h2>🎓 Student Connection</h2>
+                <input type="text" id="roomId" placeholder="Room ID (6 digits)">
+                <input type="text" id="studentId" placeholder="Student ID" value="student1">
+                <input type="text" id="studentName" placeholder="Student Name" value="John Doe">
+                <button onclick="connectStudent()">Connect as Student</button>
+                <button onclick="sendTestData()">Send Test Data</button>
+            </div>
+            
+            <div class="section">
+                <h3>📨 Messages:</h3>
+                <pre id="messages"></pre>
+            </div>
         </div>
 
         <script>
@@ -201,25 +224,32 @@ async def test_page():
             const messages = document.getElementById('messages');
 
             function log(message) {
-                messages.textContent += message + '\\n';
+                const timestamp = new Date().toLocaleTimeString();
+                messages.textContent += `[${timestamp}] ${message}\n`;
+                messages.scrollTop = messages.scrollHeight;
             }
 
             function connectTeacher() {
-                const wsUrl = 'ws://localhost:8000/ws/teacher';
+                const wsUrl = window.location.protocol === 'https:' ? 'wss://' : 'ws://';
+                const host = window.location.host;
+                const fullUrl = wsUrl + host + '/ws/teacher';
                 
-                teacherWs = new WebSocket(wsUrl);
-                teacherWs.onopen = () => log('Teacher connected');
+                log('Connecting teacher to: ' + fullUrl);
+                teacherWs = new WebSocket(fullUrl);
+                
+                teacherWs.onopen = () => log('✅ Teacher connected');
                 teacherWs.onmessage = (event) => {
                     const data = JSON.parse(event.data);
                     log('Teacher received: ' + event.data);
                     if (data.type === 'room_created') {
                         currentRoomId = data.data.room_id;
                         document.getElementById('roomCode').innerHTML = 
-                            '<strong>Room Code: ' + currentRoomId + '</strong>';
+                            '<div class="room-code">Room Code: ' + currentRoomId + '</div>';
+                        document.getElementById('roomId').value = currentRoomId;
                     }
                 };
-                teacherWs.onerror = (error) => log('Teacher error: ' + error);
-                teacherWs.onclose = () => log('Teacher disconnected');
+                teacherWs.onerror = (error) => log('❌ Teacher error: ' + error);
+                teacherWs.onclose = () => log('🔌 Teacher disconnected');
             }
 
             function connectStudent() {
@@ -232,13 +262,17 @@ async def test_page():
                     return;
                 }
                 
-                const wsUrl = `ws://localhost:8000/ws/student/${roomId}/${id}?name=${encodeURIComponent(name)}`;
+                const wsUrl = window.location.protocol === 'https:' ? 'wss://' : 'ws://';
+                const host = window.location.host;
+                const fullUrl = `${wsUrl}${host}/ws/student/${roomId}/${id}?name=${encodeURIComponent(name)}`;
                 
-                studentWs = new WebSocket(wsUrl);
-                studentWs.onopen = () => log('Student connected to room: ' + roomId);
+                log('Connecting student to: ' + fullUrl);
+                studentWs = new WebSocket(fullUrl);
+                
+                studentWs.onopen = () => log('✅ Student connected to room: ' + roomId);
                 studentWs.onmessage = (event) => log('Student received: ' + event.data);
-                studentWs.onerror = (error) => log('Student error: ' + error);
-                studentWs.onclose = () => log('Student disconnected');
+                studentWs.onerror = (error) => log('❌ Student error: ' + error);
+                studentWs.onclose = () => log('🔌 Student disconnected');
             }
 
             function sendTestData() {
@@ -252,9 +286,9 @@ async def test_page():
                         }
                     };
                     studentWs.send(JSON.stringify(data));
-                    log('Sent test data');
+                    log('📤 Sent test data');
                 } else {
-                    log('Student not connected');
+                    log('❌ Student not connected');
                 }
             }
         </script>
@@ -262,5 +296,3 @@ async def test_page():
     </html>
     """
     return HTMLResponse(content=html_content)
-
-
