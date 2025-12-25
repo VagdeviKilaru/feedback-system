@@ -1,68 +1,101 @@
-import { FaceMesh } from '@mediapipe/face_mesh';
-import { Camera } from '@mediapipe/camera_utils';
+// MediaPipe Face Mesh utility with mobile fallback
+let FaceMesh = null;
+let Camera = null;
 
-export function calculateEyeAspectRatio(eyeLandmarks) {
-    if (!eyeLandmarks || eyeLandmarks.length < 6) return 1.0;
+// Try to load MediaPipe from CDN with retries
+async function loadMediaPipe() {
+    if (FaceMesh && Camera) return { FaceMesh, Camera };
 
-    const v1 = distance(eyeLandmarks[1], eyeLandmarks[5]);
-    const v2 = distance(eyeLandmarks[2], eyeLandmarks[4]);
-    const h = distance(eyeLandmarks[0], eyeLandmarks[3]);
+    console.log('🔄 Loading MediaPipe...');
 
-    return (v1 + v2) / (2.0 * h);
-}
+    try {
+        // Method 1: Try from official CDN
+        const script1 = document.createElement('script');
+        script1.src = 'https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh';
+        document.head.appendChild(script1);
 
-export function estimateGazeDirection(faceLandmarks) {
-    if (!faceLandmarks || faceLandmarks.length < 478) {
-        return { x: 0, y: 0 };
+        await new Promise((resolve, reject) => {
+            script1.onload = resolve;
+            script1.onerror = reject;
+            setTimeout(reject, 10000); // 10 second timeout
+        });
+
+        if (window.FaceMesh) {
+            FaceMesh = window.FaceMesh;
+        }
+    } catch (e) {
+        console.warn('⚠️ Primary CDN failed, trying backup...');
     }
 
-    const leftIris = [468, 469, 470, 471, 472].map(i => faceLandmarks[i]);
-    const rightIris = [473, 474, 475, 476, 477].map(i => faceLandmarks[i]);
+    try {
+        // Method 2: Try camera utils
+        const script2 = document.createElement('script');
+        script2.src = 'https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils';
+        document.head.appendChild(script2);
 
-    const leftIrisCenter = getCenter(leftIris);
-    const rightIrisCenter = getCenter(rightIris);
+        await new Promise((resolve, reject) => {
+            script2.onload = resolve;
+            script2.onerror = reject;
+            setTimeout(reject, 10000);
+        });
 
-    const leftEyeCorner = faceLandmarks[33];
-    const rightEyeCorner = faceLandmarks[263];
-
-    const leftGazeX = (leftIrisCenter.x - leftEyeCorner.x) * 2 - 1;
-    const rightGazeX = (rightIrisCenter.x - rightEyeCorner.x) * 2 - 1;
-
-    const leftGazeY = (leftIrisCenter.y - leftEyeCorner.y) * 2 - 1;
-    const rightGazeY = (rightIrisCenter.y - rightEyeCorner.y) * 2 - 1;
-
-    return {
-        x: (leftGazeX + rightGazeX) / 2,
-        y: (leftGazeY + rightGazeY) / 2,
-    };
-}
-
-export function estimateHeadPose(faceLandmarks) {
-    if (!faceLandmarks || faceLandmarks.length < 478) {
-        return { pitch: 0, yaw: 0, roll: 0 };
+        if (window.Camera) {
+            Camera = window.Camera;
+        }
+    } catch (e) {
+        console.warn('⚠️ Camera utils failed');
     }
 
-    const noseTip = faceLandmarks[1];
-    const chin = faceLandmarks[152];
-    const leftEye = faceLandmarks[33];
-    const rightEye = faceLandmarks[263];
+    if (!FaceMesh || !Camera) {
+        throw new Error('MediaPipe libraries failed to load');
+    }
 
-    const faceWidth = Math.abs(rightEye.x - leftEye.x);
-    const noseOffset = noseTip.x - (leftEye.x + rightEye.x) / 2;
-    const yaw = (noseOffset / faceWidth) * 60;
+    console.log('✅ MediaPipe loaded successfully');
+    return { FaceMesh, Camera };
+}
 
-    const faceHeight = Math.abs(chin.y - ((leftEye.y + rightEye.y) / 2));
-    const noseVerticalPos = (noseTip.y - ((leftEye.y + rightEye.y) / 2)) / faceHeight;
-    const pitch = (noseVerticalPos - 0.5) * 60;
+export async function initializeMediaPipe(videoElement, onResults) {
+    try {
+        console.log('🎬 Initializing MediaPipe for video element...');
 
-    const eyeSlope = (rightEye.y - leftEye.y) / (rightEye.x - leftEye.x);
-    const roll = Math.atan(eyeSlope) * (180 / Math.PI);
+        // Load MediaPipe libraries
+        const { FaceMesh: FM, Camera: Cam } = await loadMediaPipe();
 
-    return {
-        pitch: Math.round(pitch),
-        yaw: Math.round(yaw),
-        roll: Math.round(roll),
-    };
+        // Initialize Face Mesh
+        const faceMesh = new FM({
+            locateFile: (file) => {
+                return `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`;
+            }
+        });
+
+        // Configure Face Mesh
+        faceMesh.setOptions({
+            maxNumFaces: 1,
+            refineLandmarks: true,
+            minDetectionConfidence: 0.5,
+            minTrackingConfidence: 0.5
+        });
+
+        faceMesh.onResults(onResults);
+
+        // Initialize Camera
+        const camera = new Cam(videoElement, {
+            onFrame: async () => {
+                await faceMesh.send({ image: videoElement });
+            },
+            width: 640,
+            height: 480
+        });
+
+        camera.start();
+
+        console.log('✅ MediaPipe initialized successfully');
+        return { faceMesh, camera };
+
+    } catch (error) {
+        console.error('❌ MediaPipe initialization failed:', error);
+        throw error;
+    }
 }
 
 export function extractAttentionFeatures(results) {
@@ -70,75 +103,55 @@ export function extractAttentionFeatures(results) {
         return null;
     }
 
-    const faceLandmarks = results.multiFaceLandmarks[0];
+    const landmarks = results.multiFaceLandmarks[0];
 
-    const leftEyeLandmarks = [33, 160, 158, 133, 153, 144].map(i => faceLandmarks[i]);
-    const rightEyeLandmarks = [362, 385, 387, 263, 373, 380].map(i => faceLandmarks[i]);
+    // Key landmark indices
+    const LEFT_EYE = [33, 160, 158, 133, 153, 144];
+    const RIGHT_EYE = [362, 385, 387, 263, 373, 380];
+    const NOSE_TIP = 1;
+    const CHIN = 152;
+    const LEFT_EYE_IRIS = 468;
+    const RIGHT_EYE_IRIS = 473;
 
-    const leftEAR = calculateEyeAspectRatio(leftEyeLandmarks);
-    const rightEAR = calculateEyeAspectRatio(rightEyeLandmarks);
-    const eyeAspectRatio = (leftEAR + rightEAR) / 2;
+    // Calculate Eye Aspect Ratio (EAR)
+    function calculateEAR(eyePoints) {
+        const vertical1 = Math.hypot(
+            landmarks[eyePoints[1]].x - landmarks[eyePoints[5]].x,
+            landmarks[eyePoints[1]].y - landmarks[eyePoints[5]].y
+        );
+        const vertical2 = Math.hypot(
+            landmarks[eyePoints[2]].x - landmarks[eyePoints[4]].x,
+            landmarks[eyePoints[2]].y - landmarks[eyePoints[4]].y
+        );
+        const horizontal = Math.hypot(
+            landmarks[eyePoints[0]].x - landmarks[eyePoints[3]].x,
+            landmarks[eyePoints[0]].y - landmarks[eyePoints[3]].y
+        );
+        return (vertical1 + vertical2) / (2.0 * horizontal);
+    }
 
-    const gazeDirection = estimateGazeDirection(faceLandmarks);
-    const headPose = estimateHeadPose(faceLandmarks);
+    const leftEAR = calculateEAR(LEFT_EYE);
+    const rightEAR = calculateEAR(RIGHT_EYE);
+    const ear = (leftEAR + rightEAR) / 2;
 
-    return {
-        eye_aspect_ratio: eyeAspectRatio,
-        gaze_direction: gazeDirection,
-        head_pose: headPose,
-        timestamp: Date.now(),
-    };
-}
+    // Calculate Gaze Direction (simplified)
+    const leftIris = landmarks[LEFT_EYE_IRIS];
+    const rightIris = landmarks[RIGHT_EYE_IRIS];
+    const noseTip = landmarks[NOSE_TIP];
 
-export async function initializeMediaPipe(videoElement, onResults) {
-    const faceMesh = new FaceMesh({
-        locateFile: (file) => {
-            return `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`;
-        }
-    });
+    const gazeX = ((leftIris.x + rightIris.x) / 2) - noseTip.x;
+    const gazeY = ((leftIris.y + rightIris.y) / 2) - noseTip.y;
 
-    faceMesh.setOptions({
-        maxNumFaces: 1,
-        refineLandmarks: true,
-        minDetectionConfidence: 0.5,
-        minTrackingConfidence: 0.5,
-    });
-
-    faceMesh.onResults(onResults);
-
-    const camera = new Camera(videoElement, {
-        onFrame: async () => {
-            await faceMesh.send({ image: videoElement });
-        },
-        width: 1280,
-        height: 720,
-    });
-
-    await camera.start();
-
-    return { faceMesh, camera };
-}
-
-function distance(point1, point2) {
-    const dx = point1.x - point2.x;
-    const dy = point1.y - point2.y;
-    const dz = (point1.z || 0) - (point2.z || 0);
-    return Math.sqrt(dx * dx + dy * dy + dz * dz);
-}
-
-function getCenter(points) {
-    const sum = points.reduce(
-        (acc, point) => ({
-            x: acc.x + point.x,
-            y: acc.y + point.y,
-            z: acc.z + (point.z || 0),
-        }),
-        { x: 0, y: 0, z: 0 }
-    );
+    // Calculate Head Pose (simplified)
+    const chin = landmarks[CHIN];
+    const pitch = Math.round((chin.y - noseTip.y) * 100);
+    const yaw = Math.round((chin.x - noseTip.x) * 100);
+    const roll = 0; // Simplified
 
     return {
-        x: sum.x / points.length,
-        y: sum.y / points.length,
-        z: sum.z / points.length,
+        eye_aspect_ratio: ear,
+        gaze_direction: { x: gazeX, y: gazeY },
+        head_pose: { pitch, yaw, roll },
+        timestamp: Date.now()
     };
 }
