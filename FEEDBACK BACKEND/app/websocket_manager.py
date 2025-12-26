@@ -19,15 +19,16 @@ class ConnectionManager:
         # Track which room each teacher is in: {websocket: room_id}
         self.teacher_rooms: Dict[WebSocket, str] = {}
         
+        # Store teacher names
+        self.teacher_names: Dict[WebSocket, str] = {}
+        
         self.lock = asyncio.Lock()
 
     def generate_room_id(self) -> str:
         """Generate a unique 6-character alphanumeric room ID"""
-        # Generate random 6-character code using uppercase letters and digits
         characters = string.ascii_uppercase + string.digits
         room_id = ''.join(secrets.choice(characters) for _ in range(6))
         
-        # Make sure it's unique
         while room_id in self.rooms_teachers:
             room_id = ''.join(secrets.choice(characters) for _ in range(6))
         
@@ -56,12 +57,10 @@ class ConnectionManager:
         await websocket.accept()
         
         async with self.lock:
-            # Check if room exists
             if room_id not in self.rooms_students:
                 print(f"❌ Student tried to join non-existent room: {room_id}")
                 return False
             
-            # Add student to room
             self.rooms_students[room_id][student_id] = websocket
             self.rooms_students_info[room_id][student_id] = {
                 "id": student_id,
@@ -81,12 +80,25 @@ class ConnectionManager:
             }
         })
         
+        # Notify other students
+        await self.broadcast_to_room_students(room_id, {
+            "type": "student_join",
+            "data": {
+                "student_id": student_id,
+                "student_name": student_name,
+                "timestamp": datetime.now().isoformat()
+            }
+        }, exclude_id=student_id)
+        
         print(f"✅ Student connected: {student_name} → Room: {room_id} | Students in room: {len(self.rooms_students[room_id])}")
         return True
 
-    async def connect_teacher(self, websocket: WebSocket, room_id: str = None):
+    async def connect_teacher(self, websocket: WebSocket, room_id: str = None, name: str = "Teacher"):
         """Connect a teacher and create/join room"""
         await websocket.accept()
+        
+        # Store teacher name
+        self.teacher_names[websocket] = name
         
         # Create or join room
         room_id = await self.create_room(websocket, room_id)
@@ -105,7 +117,7 @@ class ConnectionManager:
             }
         })
         
-        print(f"✅ Teacher connected to room: {room_id} | Teachers in room: {len(self.rooms_teachers[room_id])}")
+        print(f"✅ Teacher '{name}' connected to room: {room_id} | Teachers in room: {len(self.rooms_teachers[room_id])}")
         return room_id
 
     async def disconnect_student(self, room_id: str, student_id: str):
@@ -120,6 +132,16 @@ class ConnectionManager:
                 del self.rooms_students_info[room_id][student_id]
         
         await self.broadcast_to_room_teachers(room_id, {
+            "type": "student_leave",
+            "data": {
+                "student_id": student_id,
+                "student_name": student_name,
+                "timestamp": datetime.now().isoformat()
+            }
+        })
+        
+        # Notify other students
+        await self.broadcast_to_room_students(room_id, {
             "type": "student_leave",
             "data": {
                 "student_id": student_id,
@@ -156,6 +178,9 @@ class ConnectionManager:
             
             if websocket in self.teacher_rooms:
                 del self.teacher_rooms[websocket]
+            
+            if websocket in self.teacher_names:
+                del self.teacher_names[websocket]
         
         print(f"❌ Teacher disconnected from room: {room_id}")
 
@@ -176,6 +201,26 @@ class ConnectionManager:
         # Clean up disconnected teachers
         for teacher_ws in disconnected_teachers:
             await self.disconnect_teacher(teacher_ws)
+
+    async def broadcast_to_room_students(self, room_id: str, message: dict, exclude_id: str = None):
+        """Send message to all students in a specific room"""
+        if room_id not in self.rooms_students:
+            return
+        
+        disconnected_students = []
+        
+        for student_id, student_ws in self.rooms_students[room_id].items():
+            if exclude_id and student_id == exclude_id:
+                continue
+            try:
+                await student_ws.send_json(message)
+            except Exception as e:
+                print(f"Error sending to student: {e}")
+                disconnected_students.append(student_id)
+        
+        # Clean up disconnected students
+        for student_id in disconnected_students:
+            await self.disconnect_student(room_id, student_id)
 
     async def update_student_attention(self, room_id: str, student_id: str, attention_data: dict):
         """Update student attention status in a specific room"""
