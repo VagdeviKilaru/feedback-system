@@ -219,5 +219,41 @@ async def teacher_websocket(
     except Exception as e:
         print(f"Error in teacher websocket: {e}")
         await manager.disconnect_teacher(websocket)
-
-
+# Camera Stream endpoint for WebRTC signaling
+@app.websocket("/ws/camera/{room_id}/{student_id}")
+async def camera_stream_websocket(
+    websocket: WebSocket,
+    room_id: str,
+    student_id: str,
+    name: str = Query(..., description="Student name")
+):
+    """WebSocket endpoint for camera streaming via WebRTC signaling"""
+    await websocket.accept()
+    
+    # Store camera websocket connection
+    if not hasattr(manager, 'camera_connections'):
+        manager.camera_connections = {}
+    
+    if room_id not in manager.camera_connections:
+        manager.camera_connections[room_id] = {}
+    
+    manager.camera_connections[room_id][student_id] = websocket
+    
+    try:
+        while True:
+            data = await websocket.receive_json()
+            
+            # Forward WebRTC signaling to teacher
+            if data.get("type") in ["offer", "answer", "ice-candidate"]:
+                await manager.broadcast_to_room_teachers(room_id, {
+                    "type": "camera_signal",
+                    "student_id": student_id,
+                    "student_name": name,
+                    "signal": data
+                })
+    
+    except WebSocketDisconnect:
+        if room_id in manager.camera_connections and student_id in manager.camera_connections[room_id]:
+            del manager.camera_connections[room_id][student_id]
+    except Exception as e:
+        print(f"Camera stream error: {e}")
