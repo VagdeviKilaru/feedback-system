@@ -1,16 +1,15 @@
 from typing import Dict, Tuple, Optional
-from datetime import datetime, timedelta
+from datetime import datetime
 
 class AttentionAnalyzer:
     def __init__(self):
-        # Better thresholds for accurate detection
-        self.DROWSY_THRESHOLD = 0.22
-        self.LOOKING_AWAY_THRESHOLD_X = 0.25
-        self.LOOKING_AWAY_THRESHOLD_Y = 0.20
-        self.HEAD_POSE_THRESHOLD_PITCH = 25
-        self.HEAD_POSE_THRESHOLD_YAW = 25
-        self.CONSECUTIVE_FRAMES = 3
-        self.NO_MOVEMENT_SECONDS = 60  # 1 minute
+        self.DROWSY_THRESHOLD = 0.25
+        self.LOOKING_AWAY_THRESHOLD_X = 0.18
+        self.LOOKING_AWAY_THRESHOLD_Y = 0.15
+        self.HEAD_POSE_THRESHOLD_PITCH = 20
+        self.HEAD_POSE_THRESHOLD_YAW = 20
+        self.CONSECUTIVE_FRAMES = 1
+        self.NO_MOVEMENT_SECONDS = 60
         
         self.student_states: Dict[str, dict] = {}
     
@@ -30,24 +29,26 @@ class AttentionAnalyzer:
                 'status_count': 0,
                 'last_status_change': datetime.now(),
                 'last_position': {'pitch': pitch, 'yaw': yaw, 'ear': ear},
-                'last_movement': datetime.now()
+                'last_movement': datetime.now(),
+                'last_alert_time': None,
+                'last_alert_type': None
             }
         
         state = self.student_states[student_id]
         
-        # Check for movement
+        # Check movement
         last_pos = state['last_position']
         movement_detected = (
-            abs(pitch - last_pos['pitch']) > 5 or
-            abs(yaw - last_pos['yaw']) > 5 or
-            abs(ear - last_pos['ear']) > 0.05
+            abs(pitch - last_pos['pitch']) > 3 or
+            abs(yaw - last_pos['yaw']) > 3 or
+            abs(ear - last_pos['ear']) > 0.03
         )
         
         if movement_detected:
             state['last_movement'] = datetime.now()
             state['last_position'] = {'pitch': pitch, 'yaw': yaw, 'ear': ear}
         
-        # Determine status
+        # Detect status
         status = 'attentive'
         confidence = 1.0
         
@@ -61,12 +62,8 @@ class AttentionAnalyzer:
             status = 'distracted'
             confidence = max(pitch, yaw) / 45
         
-        if status != state['current_status']:
-            state['status_count'] = 1
-            state['current_status'] = status
-            state['last_status_change'] = datetime.now()
-        else:
-            state['status_count'] += 1
+        state['current_status'] = status
+        state['status_count'] = state.get('status_count', 0) + 1
         
         analysis = {
             'gaze_direction': gaze,
@@ -79,24 +76,51 @@ class AttentionAnalyzer:
         return status, min(confidence, 1.0), analysis
     
     def generate_alert(self, student_id: str, student_name: str, status: str, analysis: dict) -> Optional[dict]:
+        """Generate alert ONLY if NOT attentive"""
+        
         state = self.student_states.get(student_id)
         if not state:
             return None
         
-        # Check for no movement alert
+        # NO ALERT if student is attentive
+        if status == 'attentive':
+            # Clear alert tracking when back to normal
+            state['last_alert_type'] = None
+            return None
+        
+        # Check no movement
         no_movement_time = (datetime.now() - state['last_movement']).total_seconds()
         if no_movement_time >= self.NO_MOVEMENT_SECONDS:
-            return {
-                'alert_type': 'no_movement',
-                'message': f"{student_name} has not moved for {int(no_movement_time/60)} minute(s)",
-                'severity': 'high',
-                'student_id': student_id,
-                'student_name': student_name,
-                'timestamp': datetime.now().isoformat()
-            }
+            if state['last_alert_type'] != 'no_movement' or \
+               (state['last_alert_time'] and (datetime.now() - state['last_alert_time']).total_seconds() >= 60):
+                state['last_alert_time'] = datetime.now()
+                state['last_alert_type'] = 'no_movement'
+                
+                return {
+                    'alert_type': 'no_movement',
+                    'message': f"{student_name} has not moved for {int(no_movement_time/60)} minute(s)",
+                    'severity': 'high',
+                    'student_id': student_id,
+                    'student_name': student_name,
+                    'timestamp': datetime.now().isoformat()
+                }
         
-        # Regular status alerts
-        if status != 'attentive' and state['status_count'] >= self.CONSECUTIVE_FRAMES:
+        # Status alerts
+        should_send = False
+        
+        if state['last_alert_type'] != status:
+            should_send = True
+        elif state['last_alert_time']:
+            time_since_last = (datetime.now() - state['last_alert_time']).total_seconds()
+            if time_since_last >= 5:
+                should_send = True
+        else:
+            should_send = True
+        
+        if should_send:
+            state['last_alert_time'] = datetime.now()
+            state['last_alert_type'] = status
+            
             severity = 'high' if status == 'drowsy' else 'medium'
             
             messages = {

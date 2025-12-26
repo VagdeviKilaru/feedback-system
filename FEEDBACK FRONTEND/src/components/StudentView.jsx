@@ -58,9 +58,19 @@ export default function StudentView() {
         const pitch = Math.abs(features.head_pose?.pitch || 0);
         const yaw = Math.abs(features.head_pose?.yaw || 0);
 
-        if (ear < 0.22) return 'drowsy';
-        if (gazeX > 0.25 || gazeY > 0.20) return 'looking_away';
-        if (pitch > 25 || yaw > 25) return 'distracted';
+        // ULTRA SENSITIVE - matches backend exactly
+        if (ear < 0.25) {
+            console.log('🔴 DROWSY:', ear);
+            return 'drowsy';
+        }
+        if (gazeX > 0.18 || gazeY > 0.15) {
+            console.log('👀 LOOKING AWAY:', gazeX, gazeY);
+            return 'looking_away';
+        }
+        if (pitch > 20 || yaw > 20) {
+            console.log('⚠️ DISTRACTED:', pitch, yaw);
+            return 'distracted';
+        }
 
         return 'attentive';
     };
@@ -158,7 +168,7 @@ export default function StudentView() {
         };
     }, [isJoined, roomId, studentId, studentName]);
 
-    // Send updates
+    // Send attention updates every 300ms (FASTER)
     useEffect(() => {
         if (!isJoined || !isConnected || !cameraActive) return;
 
@@ -169,7 +179,7 @@ export default function StudentView() {
                     data: latestFeaturesRef.current,
                 });
             }
-        }, 500);
+        }, 300);  // Faster updates
 
         return () => {
             if (updateIntervalRef.current) {

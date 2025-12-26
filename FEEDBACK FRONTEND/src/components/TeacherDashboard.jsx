@@ -38,7 +38,7 @@ export default function TeacherDashboard() {
     needsAttention: 0,
   });
 
-  // Chat state
+  // Chat
   const [messages, setMessages] = useState([]);
   const [messageInput, setMessageInput] = useState('');
   const [showChat, setShowChat] = useState(false);
@@ -54,7 +54,6 @@ export default function TeacherDashboard() {
       case 'room_created':
         setRoomId(message.data.room_id);
         setStudents(message.data.students || []);
-        console.log('✅ Room created with ID:', message.data.room_id);
         break;
 
       case 'student_join':
@@ -91,28 +90,31 @@ export default function TeacherDashboard() {
         break;
 
       case 'alert':
-        setAlerts(prev => {
-          const newAlerts = [{
-            student_id: message.data.student_id,
-            student_name: message.data.student_name,
-            alert_type: message.data.alert_type,
-            message: message.data.message,
-            severity: message.data.severity,
-            timestamp: message.data.timestamp,
-          }, ...prev];
+        // Only add alert if student is NOT attentive
+        if (message.data.alert_type !== 'attentive') {
+          setAlerts(prev => {
+            const newAlerts = [{
+              student_id: message.data.student_id,
+              student_name: message.data.student_name,
+              alert_type: message.data.alert_type,
+              message: message.data.message,
+              severity: message.data.severity,
+              timestamp: message.data.timestamp,
+            }, ...prev];
 
-          return newAlerts.slice(0, MAX_ALERTS);
-        });
+            return newAlerts.slice(0, MAX_ALERTS);
+          });
 
-        setStudents(prev => prev.map(student => {
-          if (student.id === message.data.student_id) {
-            return {
-              ...student,
-              alerts_count: student.alerts_count + 1,
-            };
-          }
-          return student;
-        }));
+          setStudents(prev => prev.map(student => {
+            if (student.id === message.data.student_id) {
+              return {
+                ...student,
+                alerts_count: student.alerts_count + 1,
+              };
+            }
+            return student;
+          }));
+        }
         break;
 
       case 'chat_message':
@@ -126,17 +128,14 @@ export default function TeacherDashboard() {
   }, []);
 
   useEffect(() => {
-    console.log('Connecting to WebSocket:', WS_URL);
     const wsUrl = `${WS_URL}/ws/teacher?name=Teacher`;
     wsRef.current = new WebSocketManager(wsUrl, handleWebSocketMessage);
 
     wsRef.current.connect()
       .then(() => {
-        console.log('✅ Teacher WebSocket connected');
         setIsConnected(true);
       })
-      .catch((err) => {
-        console.error('❌ Teacher WebSocket connection error:', err);
+      .catch(() => {
         setIsConnected(false);
       });
 
@@ -162,7 +161,7 @@ export default function TeacherDashboard() {
   const copyRoomCode = () => {
     if (roomId) {
       navigator.clipboard.writeText(roomId);
-      alert(`Room code ${roomId} copied to clipboard!`);
+      alert(`Room code ${roomId} copied!`);
     }
   };
 
@@ -249,17 +248,9 @@ export default function TeacherDashboard() {
               fontWeight: 'bold',
               color: '#111827',
               margin: 0,
-              marginBottom: '4px',
             }}>
               Live Feedback System
             </h1>
-            <p style={{
-              margin: 0,
-              color: '#6b7280',
-              fontSize: '14px',
-            }}>
-              Real-Time Student Feedback Generator & Attention Tracker
-            </p>
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
@@ -331,7 +322,7 @@ export default function TeacherDashboard() {
           </div>
         </div>
 
-        {/* Room Code Display */}
+        {/* Room Code */}
         {roomId ? (
           <div style={{
             display: 'flex',
@@ -378,19 +369,7 @@ export default function TeacherDashboard() {
                 cursor: 'pointer',
                 fontSize: '15px',
                 fontWeight: '600',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-                transition: 'all 0.2s',
                 boxShadow: '0 4px 6px rgba(59, 130, 246, 0.3)',
-              }}
-              onMouseEnter={(e) => {
-                e.target.style.backgroundColor = '#2563eb';
-                e.target.style.transform = 'scale(1.05)';
-              }}
-              onMouseLeave={(e) => {
-                e.target.style.backgroundColor = '#3b82f6';
-                e.target.style.transform = 'scale(1)';
               }}
             >
               📋 Copy Code
@@ -407,11 +386,11 @@ export default function TeacherDashboard() {
             textAlign: 'center',
             fontWeight: '500',
           }}>
-            ⏳ Generating room code... Please wait.
+            ⏳ Generating room code...
           </div>
         )}
 
-        {/* Stats Cards */}
+        {/* Stats */}
         <div style={{
           display: 'grid',
           gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
@@ -546,7 +525,7 @@ export default function TeacherDashboard() {
                     {msg.message}
                   </div>
                   <div style={{ fontSize: '11px', color: '#9ca3af', marginTop: '4px' }}>
-                    {new Date(msg.timestamp).toLocaleTimeString()}
+                    {new Date(msg.timestamp).toLocaleTimeString('en-US', { timeZone: 'GMT' })}
                   </div>
                 </div>
               ))
@@ -560,7 +539,7 @@ export default function TeacherDashboard() {
               value={messageInput}
               onChange={(e) => setMessageInput(e.target.value)}
               onKeyPress={(e) => e.key === 'Enter' && sendMessage()}
-              placeholder="Type a message..."
+              placeholder="Type message..."
               style={{
                 flex: 1,
                 padding: '12px',
@@ -590,7 +569,7 @@ export default function TeacherDashboard() {
         </div>
       )}
 
-      {/* Main Content Grid */}
+      {/* Main Content */}
       <div style={{
         display: 'grid',
         gridTemplateColumns: showCamera ? '350px 1fr 1fr' : '1fr 1fr',
@@ -620,7 +599,7 @@ export default function TeacherDashboard() {
           </div>
         )}
 
-        {/* Student Cameras Grid */}
+        {/* Student List (NO CAMERA BOXES) */}
         <div style={{
           backgroundColor: 'white',
           borderRadius: '16px',
@@ -649,96 +628,89 @@ export default function TeacherDashboard() {
               textAlign: 'center',
             }}>
               <div style={{ fontSize: '64px', marginBottom: '16px' }}>👥</div>
-              <div style={{ fontWeight: '600', marginBottom: '8px' }}>No students connected yet</div>
-              <div>Share room code <strong style={{ fontFamily: 'monospace', letterSpacing: '2px' }}>{roomId || '...'}</strong></div>
+              <div style={{ fontWeight: '600', marginBottom: '8px' }}>No students connected</div>
+              <div>Share code <strong style={{ fontFamily: 'monospace' }}>{roomId || '...'}</strong></div>
             </div>
           ) : (
-            <div style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))',
-              gap: '16px',
-            }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
               {students.map((student) => (
                 <div
                   key={student.id}
                   style={{
-                    padding: '12px',
+                    padding: '16px',
                     border: `3px solid ${STATUS_COLORS[student.status]}`,
                     borderRadius: '12px',
                     backgroundColor: '#fafafa',
+                    transition: 'all 0.3s ease',
                   }}
                 >
-                  {/* Student Video Placeholder */}
                   <div style={{
-                    width: '100%',
-                    height: '150px',
-                    backgroundColor: '#e5e7eb',
-                    borderRadius: '8px',
-                    marginBottom: '12px',
                     display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontSize: '48px',
-                    background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                    color: 'white',
-                    fontWeight: 'bold',
+                    justifyContent: 'space-between',
+                    alignItems: 'flex-start',
+                    marginBottom: '8px',
                   }}>
-                    {student.name.charAt(0).toUpperCase()}
+                    <div>
+                      <div style={{
+                        fontWeight: '600',
+                        fontSize: '16px',
+                        color: '#111827',
+                        marginBottom: '4px',
+                      }}>
+                        {student.name}
+                      </div>
+                      <div style={{
+                        fontSize: '12px',
+                        color: '#6b7280',
+                      }}>
+                        ID: {student.id.substring(0, 8)}...
+                      </div>
+                    </div>
+
+                    <div style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      padding: '8px 16px',
+                      backgroundColor: STATUS_COLORS[student.status],
+                      color: 'white',
+                      borderRadius: '20px',
+                      fontSize: '14px',
+                      fontWeight: '600',
+                      boxShadow: `0 2px 8px ${STATUS_COLORS[student.status]}66`,
+                    }}>
+                      <span>{getStatusIcon(student.status)}</span>
+                      <span>{STATUS_LABELS[student.status]}</span>
+                    </div>
                   </div>
 
                   <div style={{
-                    fontWeight: '600',
-                    fontSize: '15px',
-                    color: '#111827',
-                    marginBottom: '6px',
-                  }}>
-                    {student.name}
-                  </div>
-
-                  <div style={{
                     display: 'flex',
-                    alignItems: 'center',
-                    gap: '6px',
-                    padding: '6px 10px',
-                    backgroundColor: STATUS_COLORS[student.status],
-                    color: 'white',
-                    borderRadius: '12px',
+                    justifyContent: 'space-between',
                     fontSize: '12px',
-                    fontWeight: '600',
-                    marginBottom: '6px',
-                  }}>
-                    <span>{getStatusIcon(student.status)}</span>
-                    <span>{STATUS_LABELS[student.status]}</span>
-                  </div>
-
-                  <div style={{
-                    fontSize: '11px',
                     color: '#6b7280',
                   }}>
-                    Updated: {formatTime(student.last_update)}
+                    <span>Updated: {formatTime(student.last_update)}</span>
+                    {student.alerts_count > 0 && (
+                      <span style={{
+                        backgroundColor: '#fee2e2',
+                        color: '#dc2626',
+                        padding: '4px 12px',
+                        borderRadius: '12px',
+                        fontWeight: '600',
+                        fontSize: '11px',
+                      }}>
+                        {student.alerts_count} Alert{student.alerts_count !== 1 ? 's' : ''}
+                      </span>
+                    )}
                   </div>
-
-                  {student.alerts_count > 0 && (
-                    <div style={{
-                      marginTop: '6px',
-                      fontSize: '11px',
-                      backgroundColor: '#fee2e2',
-                      color: '#dc2626',
-                      padding: '4px 8px',
-                      borderRadius: '8px',
-                      fontWeight: '600',
-                      textAlign: 'center',
-                    }}>
-                      {student.alerts_count} Alert{student.alerts_count !== 1 ? 's' : ''}
-                    </div>
-                  )}
                 </div>
               ))}
             </div>
           )}
         </div>
 
-        {/* Alert Panel */}
+        {/* Alerts */}
         <div style={{
           backgroundColor: 'white',
           borderRadius: '16px',
@@ -792,7 +764,7 @@ export default function TeacherDashboard() {
                 fontSize: '14px',
               }}>
                 <div style={{ fontSize: '48px', marginBottom: '12px' }}>✓</div>
-                <div style={{ fontWeight: '600' }}>All students are attentive</div>
+                <div style={{ fontWeight: '600' }}>All students attentive</div>
               </div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
