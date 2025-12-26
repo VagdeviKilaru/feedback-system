@@ -54,20 +54,30 @@ export default function StudentView() {
         const ear = features.eye_aspect_ratio || 1.0;
         const pitch = Math.abs(features.head_pose?.pitch || 0);
         const yaw = Math.abs(features.head_pose?.yaw || 0);
+        const gazeX = Math.abs(features.gaze_direction?.x || 0);
+        const gazeY = Math.abs(features.gaze_direction?.y || 0);
 
-        // RULE 1: Head turned = Looking Away
-        if (pitch > 25 || yaw > 25) {
-            console.log('👀 HEAD TURNED - LOOKING AWAY:', { pitch, yaw });
+        // PRIORITY ORDER - SAME AS BACKEND
+
+        // 1. HEAD TURNED = LOOKING AWAY (Check FIRST!)
+        if (yaw > 20 || pitch > 15) {
+            console.log('👀 HEAD TURNED - LOOKING AWAY:', { pitch: pitch.toFixed(1), yaw: yaw.toFixed(1) });
             return 'looking_away';
         }
 
-        // RULE 2: Eyes closed = Drowsy
-        if (ear < 0.20) {
-            console.log('😴 EYES CLOSED - DROWSY:', ear);
+        // 2. GAZE AWAY = LOOKING AWAY
+        if (gazeX > 0.20 || gazeY > 0.20) {
+            console.log('👀 GAZE AWAY - LOOKING AWAY:', { gazeX: gazeX.toFixed(2), gazeY: gazeY.toFixed(2) });
+            return 'looking_away';
+        }
+
+        // 3. EYES CLOSED = DROWSY (backend handles 2-second timing)
+        if (ear < 0.15) {
+            console.log('😴 EYES CLOSING - DROWSY:', ear.toFixed(3));
             return 'drowsy';
         }
 
-        // RULE 3: Normal = Attentive
+        // 4. NORMAL = ATTENTIVE
         return 'attentive';
     };
 
