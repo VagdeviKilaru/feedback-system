@@ -30,7 +30,7 @@ export default function TeacherDashboard() {
   const [students, setStudents] = useState([]);
   const [alerts, setAlerts] = useState([]);
   const [isConnected, setIsConnected] = useState(false);
-  const [showCamera, setShowCamera] = useState(true);
+  const [showCamera, setShowCamera] = useState(false);
   const [roomId, setRoomId] = useState(null);
   const [stats, setStats] = useState({
     total: 0,
@@ -38,7 +38,13 @@ export default function TeacherDashboard() {
     needsAttention: 0,
   });
 
+  // Chat state
+  const [messages, setMessages] = useState([]);
+  const [messageInput, setMessageInput] = useState('');
+  const [showChat, setShowChat] = useState(false);
+
   const wsRef = useRef(null);
+  const chatEndRef = useRef(null);
   const MAX_ALERTS = 50;
 
   const handleWebSocketMessage = useCallback((message) => {
@@ -55,7 +61,7 @@ export default function TeacherDashboard() {
         setStudents(prev => {
           const exists = prev.some(s => s.id === message.data.student_id);
           if (exists) return prev;
-          
+
           return [...prev, {
             id: message.data.student_id,
             name: message.data.student_name,
@@ -94,10 +100,10 @@ export default function TeacherDashboard() {
             severity: message.data.severity,
             timestamp: message.data.timestamp,
           }, ...prev];
-          
+
           return newAlerts.slice(0, MAX_ALERTS);
         });
-        
+
         setStudents(prev => prev.map(student => {
           if (student.id === message.data.student_id) {
             return {
@@ -109,6 +115,11 @@ export default function TeacherDashboard() {
         }));
         break;
 
+      case 'chat_message':
+        setMessages(prev => [...prev, message.data]);
+        setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
+        break;
+
       default:
         break;
     }
@@ -116,7 +127,7 @@ export default function TeacherDashboard() {
 
   useEffect(() => {
     console.log('Connecting to WebSocket:', WS_URL);
-    const wsUrl = `${WS_URL}/ws/teacher`;
+    const wsUrl = `${WS_URL}/ws/teacher?name=Teacher`;
     wsRef.current = new WebSocketManager(wsUrl, handleWebSocketMessage);
 
     wsRef.current.connect()
@@ -155,6 +166,25 @@ export default function TeacherDashboard() {
     }
   };
 
+  const sendMessage = () => {
+    if (messageInput.trim() && wsRef.current?.isConnected()) {
+      wsRef.current.send({
+        type: 'chat_message',
+        message: messageInput.trim()
+      });
+      setMessageInput('');
+    }
+  };
+
+  const handleLeaveClass = () => {
+    if (confirm('Are you sure you want to leave? This will end the class for all students.')) {
+      if (wsRef.current) {
+        wsRef.current.disconnect();
+      }
+      window.location.href = '/';
+    }
+  };
+
   const formatTime = (timestamp) => {
     const date = new Date(timestamp);
     const now = new Date();
@@ -165,6 +195,7 @@ export default function TeacherDashboard() {
     if (diffSecs < 60) return `${diffSecs}s ago`;
     if (diffMins < 60) return `${diffMins}m ago`;
     return date.toLocaleTimeString('en-US', {
+      timeZone: 'GMT',
       hour: '2-digit',
       minute: '2-digit',
     });
@@ -193,7 +224,7 @@ export default function TeacherDashboard() {
   return (
     <div style={{
       minHeight: '100vh',
-      backgroundColor: '#f9fafb',
+      background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
       padding: '20px',
     }}>
       {/* Header */}
@@ -201,14 +232,16 @@ export default function TeacherDashboard() {
         backgroundColor: 'white',
         padding: '20px 24px',
         marginBottom: '20px',
-        borderRadius: '12px',
-        boxShadow: '0 2px 4px rgba(0, 0, 0, 0.05)',
+        borderRadius: '16px',
+        boxShadow: '0 10px 30px rgba(0, 0, 0, 0.2)',
       }}>
         <div style={{
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
           marginBottom: roomId ? '16px' : '0',
+          flexWrap: 'wrap',
+          gap: '12px',
         }}>
           <div>
             <h1 style={{
@@ -229,7 +262,7 @@ export default function TeacherDashboard() {
             </p>
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
             <div style={{
               display: 'flex',
               alignItems: 'center',
@@ -261,29 +294,63 @@ export default function TeacherDashboard() {
                 fontWeight: '500',
               }}
             >
-              {showCamera ? 'Hide' : 'Show'} Camera
+              {showCamera ? 'Hide' : 'Show'} My Camera
+            </button>
+
+            <button
+              onClick={() => setShowChat(!showChat)}
+              style={{
+                padding: '8px 16px',
+                backgroundColor: '#3b82f6',
+                color: 'white',
+                border: 'none',
+                borderRadius: '8px',
+                cursor: 'pointer',
+                fontSize: '14px',
+                fontWeight: '600',
+              }}
+            >
+              💬 Chat {messages.length > 0 && `(${messages.length})`}
+            </button>
+
+            <button
+              onClick={handleLeaveClass}
+              style={{
+                padding: '8px 16px',
+                backgroundColor: '#ef4444',
+                color: 'white',
+                border: 'none',
+                borderRadius: '8px',
+                cursor: 'pointer',
+                fontSize: '14px',
+                fontWeight: '600',
+              }}
+            >
+              Leave Class
             </button>
           </div>
         </div>
 
-        {/* ROOM CODE DISPLAY */}
+        {/* Room Code Display */}
         {roomId ? (
           <div style={{
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
             padding: '20px 24px',
-            backgroundColor: '#eff6ff',
+            background: 'linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%)',
             borderRadius: '12px',
             border: '3px solid #3b82f6',
             marginBottom: '16px',
             boxShadow: '0 4px 6px rgba(59, 130, 246, 0.1)',
+            flexWrap: 'wrap',
+            gap: '16px',
           }}>
             <div>
-              <div style={{ 
-                fontSize: '13px', 
-                color: '#1e40af', 
-                marginBottom: '8px', 
+              <div style={{
+                fontSize: '13px',
+                color: '#1e40af',
+                marginBottom: '8px',
                 fontWeight: '600',
                 textTransform: 'uppercase',
                 letterSpacing: '1px',
@@ -315,6 +382,7 @@ export default function TeacherDashboard() {
                 alignItems: 'center',
                 gap: '8px',
                 transition: 'all 0.2s',
+                boxShadow: '0 4px 6px rgba(59, 130, 246, 0.3)',
               }}
               onMouseEnter={(e) => {
                 e.target.style.backgroundColor = '#2563eb';
@@ -351,11 +419,11 @@ export default function TeacherDashboard() {
         }}>
           <div style={{
             padding: '16px',
-            backgroundColor: '#eff6ff',
+            background: 'linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%)',
             borderRadius: '10px',
             border: '2px solid #3b82f6',
           }}>
-            <div style={{ fontSize: '12px', color: '#1e40af', marginBottom: '4px' }}>
+            <div style={{ fontSize: '12px', color: '#1e40af', marginBottom: '4px', fontWeight: '600' }}>
               Total Students
             </div>
             <div style={{ fontSize: '28px', fontWeight: 'bold', color: '#1e3a8a' }}>
@@ -365,11 +433,11 @@ export default function TeacherDashboard() {
 
           <div style={{
             padding: '16px',
-            backgroundColor: '#dcfce7',
+            background: 'linear-gradient(135deg, #dcfce7 0%, #bbf7d0 100%)',
             borderRadius: '10px',
             border: '2px solid #22c55e',
           }}>
-            <div style={{ fontSize: '12px', color: '#166534', marginBottom: '4px' }}>
+            <div style={{ fontSize: '12px', color: '#166534', marginBottom: '4px', fontWeight: '600' }}>
               Attentive
             </div>
             <div style={{ fontSize: '28px', fontWeight: 'bold', color: '#14532d' }}>
@@ -379,11 +447,11 @@ export default function TeacherDashboard() {
 
           <div style={{
             padding: '16px',
-            backgroundColor: '#fee2e2',
+            background: 'linear-gradient(135deg, #fee2e2 0%, #fecaca 100%)',
             borderRadius: '10px',
             border: '2px solid #ef4444',
           }}>
-            <div style={{ fontSize: '12px', color: '#991b1b', marginBottom: '4px' }}>
+            <div style={{ fontSize: '12px', color: '#991b1b', marginBottom: '4px', fontWeight: '600' }}>
               Needs Attention
             </div>
             <div style={{ fontSize: '28px', fontWeight: 'bold', color: '#7f1d1d' }}>
@@ -393,11 +461,11 @@ export default function TeacherDashboard() {
 
           <div style={{
             padding: '16px',
-            backgroundColor: '#fef3c7',
+            background: 'linear-gradient(135deg, #fef3c7 0%, #fde68a 100%)',
             borderRadius: '10px',
             border: '2px solid #f59e0b',
           }}>
-            <div style={{ fontSize: '12px', color: '#92400e', marginBottom: '4px' }}>
+            <div style={{ fontSize: '12px', color: '#92400e', marginBottom: '4px', fontWeight: '600' }}>
               Active Alerts
             </div>
             <div style={{ fontSize: '28px', fontWeight: 'bold', color: '#78350f' }}>
@@ -406,6 +474,121 @@ export default function TeacherDashboard() {
           </div>
         </div>
       </div>
+
+      {/* Chat Sidebar */}
+      {showChat && (
+        <div style={{
+          position: 'fixed',
+          top: '20px',
+          right: '20px',
+          width: '350px',
+          height: 'calc(100vh - 40px)',
+          backgroundColor: 'white',
+          borderRadius: '16px',
+          boxShadow: '0 20px 60px rgba(0, 0, 0, 0.3)',
+          display: 'flex',
+          flexDirection: 'column',
+          zIndex: 1000,
+        }}>
+          <div style={{
+            padding: '20px',
+            borderBottom: '2px solid #e5e7eb',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+          }}>
+            <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#111827', margin: 0 }}>
+              💬 Chat
+            </h3>
+            <button
+              onClick={() => setShowChat(false)}
+              style={{
+                padding: '6px 12px',
+                backgroundColor: '#f3f4f6',
+                border: 'none',
+                borderRadius: '6px',
+                cursor: 'pointer',
+                fontSize: '14px',
+                fontWeight: '600',
+              }}
+            >
+              ✕
+            </button>
+          </div>
+
+          <div style={{
+            flex: 1,
+            overflowY: 'auto',
+            padding: '16px',
+            backgroundColor: '#f9fafb',
+          }}>
+            {messages.length === 0 ? (
+              <div style={{ textAlign: 'center', color: '#9ca3af', paddingTop: '40px', fontSize: '14px' }}>
+                No messages yet
+              </div>
+            ) : (
+              messages.map((msg, index) => (
+                <div
+                  key={index}
+                  style={{
+                    marginBottom: '12px',
+                    padding: '12px',
+                    backgroundColor: msg.user_type === 'teacher' ? '#eff6ff' : 'white',
+                    borderRadius: '8px',
+                    border: `2px solid ${msg.user_type === 'teacher' ? '#3b82f6' : '#e5e7eb'}`,
+                  }}
+                >
+                  <div style={{ fontSize: '13px', fontWeight: '600', color: '#111827', marginBottom: '4px' }}>
+                    {msg.user_name}
+                    {msg.user_type === 'teacher' && ' 👨‍🏫'}
+                  </div>
+                  <div style={{ fontSize: '14px', color: '#374151' }}>
+                    {msg.message}
+                  </div>
+                  <div style={{ fontSize: '11px', color: '#9ca3af', marginTop: '4px' }}>
+                    {new Date(msg.timestamp).toLocaleTimeString()}
+                  </div>
+                </div>
+              ))
+            )}
+            <div ref={chatEndRef} />
+          </div>
+
+          <div style={{ padding: '16px', borderTop: '2px solid #e5e7eb', display: 'flex', gap: '8px' }}>
+            <input
+              type="text"
+              value={messageInput}
+              onChange={(e) => setMessageInput(e.target.value)}
+              onKeyPress={(e) => e.key === 'Enter' && sendMessage()}
+              placeholder="Type a message..."
+              style={{
+                flex: 1,
+                padding: '12px',
+                border: '2px solid #e5e7eb',
+                borderRadius: '8px',
+                fontSize: '14px',
+                outline: 'none',
+              }}
+            />
+            <button
+              onClick={sendMessage}
+              disabled={!messageInput.trim()}
+              style={{
+                padding: '12px 20px',
+                background: messageInput.trim() ? 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' : '#d1d5db',
+                color: 'white',
+                border: 'none',
+                borderRadius: '8px',
+                fontSize: '14px',
+                fontWeight: '600',
+                cursor: messageInput.trim() ? 'pointer' : 'not-allowed',
+              }}
+            >
+              Send
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Main Content Grid */}
       <div style={{
@@ -419,8 +602,8 @@ export default function TeacherDashboard() {
           <div style={{
             backgroundColor: 'white',
             padding: '20px',
-            borderRadius: '12px',
-            boxShadow: '0 2px 4px rgba(0, 0, 0, 0.05)',
+            borderRadius: '16px',
+            boxShadow: '0 10px 30px rgba(0, 0, 0, 0.2)',
           }}>
             <h3 style={{
               fontSize: '16px',
@@ -430,22 +613,20 @@ export default function TeacherDashboard() {
             }}>
               Your Camera
             </h3>
-            <VideoCapture 
+            <VideoCapture
               isActive={showCamera}
               showMirror={true}
             />
           </div>
         )}
 
-        {/* Participant List */}
+        {/* Student Cameras Grid */}
         <div style={{
           backgroundColor: 'white',
-          borderRadius: '12px',
+          borderRadius: '16px',
           padding: '20px',
-          boxShadow: '0 2px 4px rgba(0, 0, 0, 0.05)',
-          height: '600px',
-          display: 'flex',
-          flexDirection: 'column',
+          boxShadow: '0 10px 30px rgba(0, 0, 0, 0.2)',
+          minHeight: '600px',
         }}>
           <h3 style={{
             fontSize: '18px',
@@ -456,109 +637,115 @@ export default function TeacherDashboard() {
             Students ({students.length})
           </h3>
 
-          <div style={{
-            flex: 1,
-            overflowY: 'auto',
-          }}>
-            {students.length === 0 ? (
-              <div style={{
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                justifyContent: 'center',
-                height: '100%',
-                color: '#9ca3af',
-                fontSize: '14px',
-                textAlign: 'center',
-              }}>
-                <div style={{ fontSize: '64px', marginBottom: '16px' }}>👥</div>
-                <div style={{ fontWeight: '600', marginBottom: '8px' }}>No students connected yet</div>
-                <div>Share room code <strong style={{ fontFamily: 'monospace', letterSpacing: '2px' }}>{roomId || '...'}</strong> with students</div>
-              </div>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                {students.map((student) => (
-                  <div
-                    key={student.id}
-                    style={{
-                      padding: '16px',
-                      border: `2px solid ${STATUS_COLORS[student.status]}`,
-                      borderRadius: '10px',
-                      backgroundColor: '#fafafa',
-                    }}
-                  >
-                    <div style={{
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'flex-start',
-                      marginBottom: '8px',
-                    }}>
-                      <div>
-                        <div style={{
-                          fontWeight: '600',
-                          fontSize: '16px',
-                          color: '#111827',
-                          marginBottom: '4px',
-                        }}>
-                          {student.name}
-                        </div>
-                        <div style={{
-                          fontSize: '12px',
-                          color: '#6b7280',
-                        }}>
-                          ID: {student.id.substring(0, 8)}...
-                        </div>
-                      </div>
-
-                      <div style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '6px',
-                        padding: '6px 12px',
-                        backgroundColor: STATUS_COLORS[student.status],
-                        color: 'white',
-                        borderRadius: '16px',
-                        fontSize: '14px',
-                        fontWeight: '600',
-                      }}>
-                        <span>{getStatusIcon(student.status)}</span>
-                        <span>{STATUS_LABELS[student.status]}</span>
-                      </div>
-                    </div>
-
-                    <div style={{
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      fontSize: '12px',
-                      color: '#6b7280',
-                    }}>
-                      <span>Last Update: {formatTime(student.last_update)}</span>
-                      {student.alerts_count > 0 && (
-                        <span style={{
-                          backgroundColor: '#fee2e2',
-                          color: '#dc2626',
-                          padding: '2px 8px',
-                          borderRadius: '10px',
-                          fontWeight: '600',
-                        }}>
-                          {student.alerts_count} Alert{student.alerts_count !== 1 ? 's' : ''}
-                        </span>
-                      )}
-                    </div>
+          {students.length === 0 ? (
+            <div style={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              height: '400px',
+              color: '#9ca3af',
+              fontSize: '14px',
+              textAlign: 'center',
+            }}>
+              <div style={{ fontSize: '64px', marginBottom: '16px' }}>👥</div>
+              <div style={{ fontWeight: '600', marginBottom: '8px' }}>No students connected yet</div>
+              <div>Share room code <strong style={{ fontFamily: 'monospace', letterSpacing: '2px' }}>{roomId || '...'}</strong></div>
+            </div>
+          ) : (
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))',
+              gap: '16px',
+            }}>
+              {students.map((student) => (
+                <div
+                  key={student.id}
+                  style={{
+                    padding: '12px',
+                    border: `3px solid ${STATUS_COLORS[student.status]}`,
+                    borderRadius: '12px',
+                    backgroundColor: '#fafafa',
+                  }}
+                >
+                  {/* Student Video Placeholder */}
+                  <div style={{
+                    width: '100%',
+                    height: '150px',
+                    backgroundColor: '#e5e7eb',
+                    borderRadius: '8px',
+                    marginBottom: '12px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: '48px',
+                    background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                    color: 'white',
+                    fontWeight: 'bold',
+                  }}>
+                    {student.name.charAt(0).toUpperCase()}
                   </div>
-                ))}
-              </div>
-            )}
-          </div>
+
+                  <div style={{
+                    fontWeight: '600',
+                    fontSize: '15px',
+                    color: '#111827',
+                    marginBottom: '6px',
+                  }}>
+                    {student.name}
+                  </div>
+
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    padding: '6px 10px',
+                    backgroundColor: STATUS_COLORS[student.status],
+                    color: 'white',
+                    borderRadius: '12px',
+                    fontSize: '12px',
+                    fontWeight: '600',
+                    marginBottom: '6px',
+                  }}>
+                    <span>{getStatusIcon(student.status)}</span>
+                    <span>{STATUS_LABELS[student.status]}</span>
+                  </div>
+
+                  <div style={{
+                    fontSize: '11px',
+                    color: '#6b7280',
+                  }}>
+                    Updated: {formatTime(student.last_update)}
+                  </div>
+
+                  {student.alerts_count > 0 && (
+                    <div style={{
+                      marginTop: '6px',
+                      fontSize: '11px',
+                      backgroundColor: '#fee2e2',
+                      color: '#dc2626',
+                      padding: '4px 8px',
+                      borderRadius: '8px',
+                      fontWeight: '600',
+                      textAlign: 'center',
+                    }}>
+                      {student.alerts_count} Alert{student.alerts_count !== 1 ? 's' : ''}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Alert Panel */}
         <div style={{
           backgroundColor: 'white',
-          borderRadius: '12px',
+          borderRadius: '16px',
           padding: '20px',
-          boxShadow: '0 2px 4px rgba(0, 0, 0, 0.05)',
-          height: '600px',
+          boxShadow: '0 10px 30px rgba(0, 0, 0, 0.2)',
+          minHeight: '600px',
+          maxHeight: '600px',
           display: 'flex',
           flexDirection: 'column',
         }}>

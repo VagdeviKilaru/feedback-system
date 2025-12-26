@@ -16,11 +16,18 @@ export default function StudentView() {
     const [cameraActive, setCameraActive] = useState(false);
     const [error, setError] = useState(null);
 
+    // Tabs
+    const [activeTab, setActiveTab] = useState('camera');
+    const [participants, setParticipants] = useState([]);
+    const [messages, setMessages] = useState([]);
+    const [messageInput, setMessageInput] = useState('');
+
     const wsRef = useRef(null);
     const videoRef = useRef(null);
     const mediaPipeRef = useRef(null);
     const updateIntervalRef = useRef(null);
     const latestFeaturesRef = useRef(null);
+    const chatEndRef = useRef(null);
 
     const getStatusColor = (status) => {
         const colors = {
@@ -51,19 +58,9 @@ export default function StudentView() {
         const pitch = Math.abs(features.head_pose?.pitch || 0);
         const yaw = Math.abs(features.head_pose?.yaw || 0);
 
-        // VERY SENSITIVE thresholds
-        if (ear < 0.28) {
-            console.log('🔴 DROWSY:', ear);
-            return 'drowsy';
-        }
-        if (gazeX > 0.15 || gazeY > 0.15) {
-            console.log('👀 LOOKING AWAY:', gazeX, gazeY);
-            return 'looking_away';
-        }
-        if (pitch > 15 || yaw > 15) {
-            console.log('⚠️ DISTRACTED:', pitch, yaw);
-            return 'distracted';
-        }
+        if (ear < 0.22) return 'drowsy';
+        if (gazeX > 0.25 || gazeY > 0.20) return 'looking_away';
+        if (pitch > 25 || yaw > 25) return 'distracted';
 
         return 'attentive';
     };
@@ -77,10 +74,9 @@ export default function StudentView() {
             const status = analyzeAttention(extractedFeatures);
             setCurrentStatus(status);
 
-            // Mark camera as active when receiving results
             if (!cameraActive) {
                 setCameraActive(true);
-                setError(null); // Clear any errors
+                setError(null);
             }
         }
     }, [cameraActive]);
@@ -89,14 +85,9 @@ export default function StudentView() {
         if (!video || !isJoined) return;
 
         videoRef.current = video;
-
-        // Show loading
-        setError('Initializing face detection... Please wait.');
+        setError('Initializing face detection...');
 
         try {
-            console.log('🎬 Initializing MediaPipe...');
-
-            // Add retry logic
             let retries = 3;
             let lastError;
 
@@ -104,55 +95,60 @@ export default function StudentView() {
                 try {
                     const { faceMesh, camera } = await initializeMediaPipe(video, handleMediaPipeResults);
                     mediaPipeRef.current = { faceMesh, camera };
-                    setError(null); // Clear error on success
-                    console.log('✅ MediaPipe initialized successfully');
-                    return; // Success!
+                    setError(null);
+                    return;
                 } catch (err) {
                     lastError = err;
                     retries--;
-                    console.warn(`⚠️ Attempt failed, ${retries} retries left...`);
                     if (retries > 0) {
-                        await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds
+                        await new Promise(resolve => setTimeout(resolve, 2000));
                     }
                 }
             }
 
-            // All retries failed
             throw lastError;
 
         } catch (err) {
-            console.error('❌ MediaPipe initialization error:', err);
             setCameraActive(false);
-            setError('Automatic detection unavailable. Using manual mode.');
-
-            // Continue without face detection - student can still attend
-            console.log('⚠️ Continuing in manual mode...');
+            setError('Camera detection unavailable');
         }
     }, [isJoined, handleMediaPipeResults]);
 
-    // WebSocket connection
+    // WebSocket
     useEffect(() => {
         if (!isJoined || !roomId) return;
 
-        console.log('Connecting to WebSocket:', WS_URL);
         const wsUrl = `${WS_URL}/ws/student/${roomId}/${studentId}?name=${encodeURIComponent(studentName)}`;
 
         wsRef.current = new WebSocketManager(wsUrl, (message) => {
-            console.log('Student received:', message);
             if (message.type === 'error') {
                 setError(message.message);
+            } else if (message.type === 'student_join') {
+                setParticipants(prev => {
+                    const exists = prev.some(p => p.id === message.data.student_id);
+                    if (exists) return prev;
+                    return [...prev, {
+                        id: message.data.student_id,
+                        name: message.data.student_name,
+                        type: 'student'
+                    }];
+                });
+            } else if (message.type === 'student_leave') {
+                setParticipants(prev => prev.filter(p => p.id !== message.data.student_id));
+            } else if (message.type === 'chat_message') {
+                setMessages(prev => [...prev, message.data]);
+                setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
             }
         });
 
         wsRef.current.connect()
             .then(() => {
-                console.log('✅ WebSocket connected');
                 setIsConnected(true);
+                setParticipants([{ id: studentId, name: studentName, type: 'student' }]);
             })
-            .catch((err) => {
-                console.error('❌ WebSocket connection error:', err);
+            .catch(() => {
                 setIsConnected(false);
-                setError('Failed to connect to classroom. Please check room code.');
+                setError('Failed to connect');
             });
 
         return () => {
@@ -162,63 +158,28 @@ export default function StudentView() {
         };
     }, [isJoined, roomId, studentId, studentName]);
 
-    // Send attention updates every 500ms (faster)
+    // Send updates
     useEffect(() => {
-        if (!isJoined || !isConnected) return;
+        if (!isJoined || !isConnected || !cameraActive) return;
 
         updateIntervalRef.current = setInterval(() => {
-            if (latestFeaturesRef.current && wsRef.current?.isConnected() && cameraActive) {
+            if (latestFeaturesRef.current && wsRef.current?.isConnected()) {
                 wsRef.current.send({
                     type: 'attention_update',
                     data: latestFeaturesRef.current,
                 });
-                console.log('📤 Sent:', currentStatus);
             }
-        }, 500);  // Changed from 1000ms to 500ms
+        }, 500);
 
         return () => {
             if (updateIntervalRef.current) {
                 clearInterval(updateIntervalRef.current);
             }
         };
-    }, [isJoined, isConnected, currentStatus, cameraActive]);
-
-    // Fallback: Send attentive status even without face detection
-    useEffect(() => {
-        if (!isJoined || !isConnected) return;
-        if (cameraActive) return; // Don't use fallback if face detection works
-
-        console.log('⚠️ Using fallback mode - sending manual status');
-
-        const fallbackInterval = setInterval(() => {
-            if (wsRef.current?.isConnected()) {
-                // Send current status set by manual controls
-                wsRef.current.send({
-                    type: 'attention_update',
-                    data: {
-                        eye_aspect_ratio: currentStatus === 'drowsy' ? 0.15 : 0.3,
-                        gaze_direction: {
-                            x: currentStatus === 'looking_away' ? 0.3 : 0,
-                            y: currentStatus === 'looking_away' ? 0.3 : 0
-                        },
-                        head_pose: {
-                            pitch: currentStatus === 'distracted' ? 25 : 0,
-                            yaw: currentStatus === 'distracted' ? 25 : 0,
-                            roll: 0
-                        },
-                        timestamp: Date.now(),
-                        fallback: true
-                    },
-                });
-                console.log('📤 Sent manual status:', currentStatus);
-            }
-        }, 2000); // Every 2 seconds
-
-        return () => clearInterval(fallbackInterval);
-    }, [isJoined, isConnected, cameraActive, currentStatus]);
+    }, [isJoined, isConnected, cameraActive]);
 
     const handleJoinClass = () => {
-        if (studentName.trim() && roomId.trim()) {
+        if (studentName.trim() && roomId.trim() && roomId.length === 6) {
             setIsJoined(true);
             setError(null);
         }
@@ -233,6 +194,16 @@ export default function StudentView() {
             mediaPipeRef.current.camera.stop();
         }
         setCameraActive(false);
+    };
+
+    const sendMessage = () => {
+        if (messageInput.trim() && wsRef.current?.isConnected()) {
+            wsRef.current.send({
+                type: 'chat_message',
+                message: messageInput.trim()
+            });
+            setMessageInput('');
+        }
     };
 
     if (!isJoined) {
@@ -263,12 +234,6 @@ export default function StudentView() {
                         }}>
                             Join Online Class
                         </h1>
-                        <p style={{
-                            color: '#6b7280',
-                            fontSize: '15px',
-                        }}>
-                            Enter your details to join
-                        </p>
                     </div>
 
                     <div style={{ marginBottom: '24px' }}>
@@ -293,10 +258,7 @@ export default function StudentView() {
                                 borderRadius: '10px',
                                 fontSize: '16px',
                                 outline: 'none',
-                                transition: 'all 0.2s',
                             }}
-                            onFocus={(e) => e.target.style.borderColor = '#667eea'}
-                            onBlur={(e) => e.target.style.borderColor = '#e5e7eb'}
                         />
                     </div>
 
@@ -315,7 +277,7 @@ export default function StudentView() {
                             value={roomId}
                             onChange={(e) => setRoomId(e.target.value.toUpperCase())}
                             onKeyPress={(e) => e.key === 'Enter' && handleJoinClass()}
-                            placeholder="Enter 6-digit code"
+                            placeholder="ENTER CODE"
                             maxLength={6}
                             style={{
                                 width: '100%',
@@ -329,28 +291,17 @@ export default function StudentView() {
                                 fontFamily: 'monospace',
                                 fontWeight: 'bold',
                                 textAlign: 'center',
-                                transition: 'all 0.2s',
                             }}
-                            onFocus={(e) => e.target.style.borderColor = '#667eea'}
-                            onBlur={(e) => e.target.style.borderColor = '#e5e7eb'}
                         />
-                        <div style={{
-                            fontSize: '12px',
-                            color: '#6b7280',
-                            marginTop: '8px',
-                            textAlign: 'center',
-                        }}>
-                            Get the room code from your teacher
-                        </div>
                     </div>
 
                     <button
                         onClick={handleJoinClass}
-                        disabled={!studentName.trim() || !roomId.trim() || roomId.length < 6}
+                        disabled={!studentName.trim() || roomId.length !== 6}
                         style={{
                             width: '100%',
                             padding: '16px',
-                            background: (studentName.trim() && roomId.trim() && roomId.length === 6)
+                            background: (studentName.trim() && roomId.length === 6)
                                 ? 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'
                                 : '#d1d5db',
                             color: 'white',
@@ -358,36 +309,11 @@ export default function StudentView() {
                             borderRadius: '10px',
                             fontSize: '18px',
                             fontWeight: '700',
-                            cursor: (studentName.trim() && roomId.trim() && roomId.length === 6) ? 'pointer' : 'not-allowed',
-                            transition: 'all 0.3s',
-                            boxShadow: '0 4px 15px rgba(102, 126, 234, 0.4)',
-                        }}
-                        onMouseEnter={(e) => {
-                            if (studentName.trim() && roomId.trim() && roomId.length === 6) {
-                                e.target.style.transform = 'translateY(-2px)';
-                                e.target.style.boxShadow = '0 6px 20px rgba(102, 126, 234, 0.6)';
-                            }
-                        }}
-                        onMouseLeave={(e) => {
-                            e.target.style.transform = 'translateY(0)';
-                            e.target.style.boxShadow = '0 4px 15px rgba(102, 126, 234, 0.4)';
+                            cursor: (studentName.trim() && roomId.length === 6) ? 'pointer' : 'not-allowed',
                         }}
                     >
                         Join Class
                     </button>
-
-                    <div style={{
-                        marginTop: '24px',
-                        padding: '16px',
-                        background: 'linear-gradient(135deg, #fef3c7 0%, #fcd34d 100%)',
-                        borderRadius: '10px',
-                        fontSize: '13px',
-                        color: '#92400e',
-                        lineHeight: '1.6',
-                        fontWeight: '500',
-                    }}>
-                        <strong>📹 Note:</strong> Camera access required. Your attention will be monitored in real-time.
-                    </div>
                 </div>
             </div>
         );
@@ -417,28 +343,19 @@ export default function StudentView() {
                         {studentName}
                     </h2>
                     <p style={{ margin: '4px 0 0 0', color: '#6b7280', fontSize: '14px' }}>
-                        Room: <span style={{ fontWeight: 'bold', fontFamily: 'monospace', letterSpacing: '2px', color: '#667eea' }}>{roomId}</span>
+                        Room: <span style={{ fontWeight: 'bold', fontFamily: 'monospace', color: '#667eea' }}>{roomId}</span>
                     </p>
                 </div>
 
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                     <div style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '8px',
                         padding: '8px 16px',
                         backgroundColor: isConnected ? '#dcfce7' : '#fee2e2',
                         borderRadius: '20px',
                         fontSize: '13px',
                         fontWeight: '600',
                     }}>
-                        <div style={{
-                            width: '8px',
-                            height: '8px',
-                            borderRadius: '50%',
-                            backgroundColor: isConnected ? '#22c55e' : '#ef4444',
-                        }} />
-                        {isConnected ? 'Connected' : 'Disconnected'}
+                        {isConnected ? '● Connected' : '● Disconnected'}
                     </div>
 
                     <button
@@ -459,178 +376,241 @@ export default function StudentView() {
                 </div>
             </div>
 
-            {/* Error/Info Message */}
-            {error && (
-                <div style={{
-                    backgroundColor: error.includes('unavailable') ? '#fef3c7' : '#fee2e2',
-                    border: `2px solid ${error.includes('unavailable') ? '#f59e0b' : '#ef4444'}`,
-                    color: error.includes('unavailable') ? '#92400e' : '#991b1b',
-                    padding: '16px',
-                    borderRadius: '12px',
-                    marginBottom: '20px',
-                    fontSize: '14px',
-                    fontWeight: '500',
-                }}>
-                    ⚠️ {error}
-                </div>
-            )}
+            {/* Tab Navigation */}
+            <div style={{
+                backgroundColor: 'white',
+                padding: '8px',
+                borderRadius: '12px',
+                marginBottom: '20px',
+                display: 'flex',
+                gap: '8px',
+                boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
+            }}>
+                <button
+                    onClick={() => setActiveTab('camera')}
+                    style={{
+                        flex: 1,
+                        padding: '12px',
+                        background: activeTab === 'camera' ? 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' : 'transparent',
+                        color: activeTab === 'camera' ? 'white' : '#6b7280',
+                        border: 'none',
+                        borderRadius: '8px',
+                        fontSize: '15px',
+                        fontWeight: '600',
+                        cursor: 'pointer',
+                    }}
+                >
+                    📹 Camera
+                </button>
+                <button
+                    onClick={() => setActiveTab('participants')}
+                    style={{
+                        flex: 1,
+                        padding: '12px',
+                        background: activeTab === 'participants' ? 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' : 'transparent',
+                        color: activeTab === 'participants' ? 'white' : '#6b7280',
+                        border: 'none',
+                        borderRadius: '8px',
+                        fontSize: '15px',
+                        fontWeight: '600',
+                        cursor: 'pointer',
+                    }}
+                >
+                    👥 Participants ({participants.length})
+                </button>
+                <button
+                    onClick={() => setActiveTab('chat')}
+                    style={{
+                        flex: 1,
+                        padding: '12px',
+                        background: activeTab === 'chat' ? 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' : 'transparent',
+                        color: activeTab === 'chat' ? 'white' : '#6b7280',
+                        border: 'none',
+                        borderRadius: '8px',
+                        fontSize: '15px',
+                        fontWeight: '600',
+                        cursor: 'pointer',
+                    }}
+                >
+                    💬 Chat
+                </button>
+            </div>
 
-            {/* Main Content */}
+            {/* Content */}
             <div style={{
                 backgroundColor: 'white',
                 padding: '24px',
                 borderRadius: '16px',
                 boxShadow: '0 10px 30px rgba(0, 0, 0, 0.2)',
+                minHeight: '500px',
             }}>
-                <h3 style={{ fontSize: '18px', fontWeight: '600', marginBottom: '16px', color: '#111827' }}>
-                    Your Camera View
-                </h3>
+                {/* Camera Tab */}
+                {activeTab === 'camera' && (
+                    <div style={{ maxWidth: '640px', margin: '0 auto' }}>
+                        <VideoCapture
+                            ref={videoRef}
+                            onVideoReady={handleVideoReady}
+                            isActive={isJoined}
+                            showMirror={true}
+                        />
 
-                <div style={{ maxWidth: '640px', margin: '0 auto' }}>
-                    <VideoCapture
-                        ref={videoRef}
-                        onVideoReady={handleVideoReady}
-                        isActive={isJoined}
-                        showMirror={true}
-                    />
-
-                    <div style={{ marginTop: '20px', textAlign: 'center' }}>
-                        <div style={{
-                            display: 'inline-block',
-                            padding: '14px 32px',
-                            borderRadius: '30px',
-                            backgroundColor: getStatusColor(currentStatus),
-                            color: 'white',
-                            fontWeight: 'bold',
-                            fontSize: '18px',
-                            boxShadow: `0 4px 15px ${getStatusColor(currentStatus)}66`,
-                        }}>
-                            {getStatusLabel(currentStatus)}
+                        <div style={{ marginTop: '20px', textAlign: 'center' }}>
+                            <div style={{
+                                display: 'inline-block',
+                                padding: '14px 32px',
+                                borderRadius: '30px',
+                                backgroundColor: getStatusColor(currentStatus),
+                                color: 'white',
+                                fontWeight: 'bold',
+                                fontSize: '18px',
+                                boxShadow: `0 4px 15px ${getStatusColor(currentStatus)}66`,
+                            }}>
+                                {getStatusLabel(currentStatus)}
+                            </div>
                         </div>
                     </div>
+                )}
 
-                    {/* Manual Status Controls (Fallback) */}
-                    {!cameraActive && isConnected && (
-                        <div style={{
-                            marginTop: '20px',
-                            padding: '20px',
-                            background: 'linear-gradient(135deg, #fef3c7 0%, #fcd34d 100%)',
-                            borderRadius: '12px',
-                            textAlign: 'center',
-                        }}>
-                            <div style={{ fontSize: '14px', fontWeight: '600', marginBottom: '12px', color: '#92400e' }}>
-                                ⚠️ Automatic detection unavailable. Use manual controls:
-                            </div>
-                            <div style={{ display: 'flex', gap: '10px', justifyContent: 'center', flexWrap: 'wrap' }}>
-                                <button
-                                    onClick={() => setCurrentStatus('attentive')}
+                {/* Participants Tab */}
+                {activeTab === 'participants' && (
+                    <div>
+                        <h3 style={{ fontSize: '20px', fontWeight: '600', marginBottom: '20px', color: '#111827' }}>
+                            Participants ({participants.length})
+                        </h3>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                            {participants.map(participant => (
+                                <div
+                                    key={participant.id}
                                     style={{
-                                        padding: '12px 24px',
-                                        background: currentStatus === 'attentive' ? '#22c55e' : '#d1d5db',
-                                        color: 'white',
-                                        border: 'none',
-                                        borderRadius: '8px',
-                                        fontSize: '14px',
-                                        fontWeight: '600',
-                                        cursor: 'pointer',
-                                        transition: 'all 0.2s',
+                                        padding: '16px',
+                                        backgroundColor: '#f9fafb',
+                                        borderRadius: '12px',
+                                        border: '2px solid #e5e7eb',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '12px',
                                     }}
                                 >
-                                    ✓ I'm Attentive
-                                </button>
-                                <button
-                                    onClick={() => setCurrentStatus('looking_away')}
-                                    style={{
-                                        padding: '12px 24px',
-                                        background: currentStatus === 'looking_away' ? '#f59e0b' : '#d1d5db',
+                                    <div style={{
+                                        width: '48px',
+                                        height: '48px',
+                                        borderRadius: '50%',
+                                        background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
                                         color: 'white',
-                                        border: 'none',
-                                        borderRadius: '8px',
-                                        fontSize: '14px',
-                                        fontWeight: '600',
-                                        cursor: 'pointer',
-                                        transition: 'all 0.2s',
-                                    }}
-                                >
-                                    👀 Looking Away
-                                </button>
-                                <button
-                                    onClick={() => setCurrentStatus('drowsy')}
-                                    style={{
-                                        padding: '12px 24px',
-                                        background: currentStatus === 'drowsy' ? '#ef4444' : '#d1d5db',
-                                        color: 'white',
-                                        border: 'none',
-                                        borderRadius: '8px',
-                                        fontSize: '14px',
-                                        fontWeight: '600',
-                                        cursor: 'pointer',
-                                        transition: 'all 0.2s',
-                                    }}
-                                >
-                                    😴 Drowsy
-                                </button>
-                                <button
-                                    onClick={() => setCurrentStatus('distracted')}
-                                    style={{
-                                        padding: '12px 24px',
-                                        background: currentStatus === 'distracted' ? '#f97316' : '#d1d5db',
-                                        color: 'white',
-                                        border: 'none',
-                                        borderRadius: '8px',
-                                        fontSize: '14px',
-                                        fontWeight: '600',
-                                        cursor: 'pointer',
-                                        transition: 'all 0.2s',
-                                    }}
-                                >
-                                    ⚠️ Distracted
-                                </button>
-                            </div>
-                        </div>
-                    )}
-
-                    {/* Debug Info (Only show if camera is active) */}
-                    {features && cameraActive && (
-                        <div style={{
-                            marginTop: '20px',
-                            padding: '16px',
-                            background: 'linear-gradient(135deg, #f3f4f6 0%, #e5e7eb 100%)',
-                            borderRadius: '12px',
-                            fontSize: '13px',
-                        }}>
-                            <div style={{ fontWeight: 'bold', marginBottom: '12px', color: '#374151', fontSize: '14px' }}>📊 Detection Metrics</div>
-                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '10px', color: '#4b5563' }}>
-                                <div style={{ padding: '8px', backgroundColor: 'white', borderRadius: '6px' }}>
-                                    <div style={{ fontSize: '11px', color: '#6b7280' }}>Eye Ratio</div>
-                                    <div style={{ fontSize: '16px', fontWeight: 'bold' }}>{features.eye_aspect_ratio?.toFixed(3)}</div>
-                                </div>
-                                <div style={{ padding: '8px', backgroundColor: 'white', borderRadius: '6px' }}>
-                                    <div style={{ fontSize: '11px', color: '#6b7280' }}>Gaze X</div>
-                                    <div style={{ fontSize: '16px', fontWeight: 'bold' }}>{features.gaze_direction?.x?.toFixed(3)}</div>
-                                </div>
-                                <div style={{ padding: '8px', backgroundColor: 'white', borderRadius: '6px' }}>
-                                    <div style={{ fontSize: '11px', color: '#6b7280' }}>Gaze Y</div>
-                                    <div style={{ fontSize: '16px', fontWeight: 'bold' }}>{features.gaze_direction?.y?.toFixed(3)}</div>
-                                </div>
-                                <div style={{ padding: '8px', backgroundColor: 'white', borderRadius: '6px' }}>
-                                    <div style={{ fontSize: '11px', color: '#6b7280' }}>Head Pitch</div>
-                                    <div style={{ fontSize: '16px', fontWeight: 'bold' }}>{features.head_pose?.pitch}°</div>
-                                </div>
-                                <div style={{ padding: '8px', backgroundColor: 'white', borderRadius: '6px' }}>
-                                    <div style={{ fontSize: '11px', color: '#6b7280' }}>Head Yaw</div>
-                                    <div style={{ fontSize: '16px', fontWeight: 'bold' }}>{features.head_pose?.yaw}°</div>
-                                </div>
-                                <div style={{ padding: '8px', backgroundColor: 'white', borderRadius: '6px' }}>
-                                    <div style={{ fontSize: '11px', color: '#6b7280' }}>Detection</div>
-                                    <div style={{ fontSize: '16px', fontWeight: 'bold', color: '#22c55e' }}>
-                                        ✓ Active
+                                        fontSize: '20px',
+                                        fontWeight: 'bold',
+                                    }}>
+                                        {participant.name.charAt(0).toUpperCase()}
+                                    </div>
+                                    <div style={{ flex: 1 }}>
+                                        <div style={{ fontSize: '16px', fontWeight: '600', color: '#111827' }}>
+                                            {participant.name}
+                                            {participant.id === studentId && (
+                                                <span style={{
+                                                    marginLeft: '8px',
+                                                    fontSize: '12px',
+                                                    color: '#667eea',
+                                                    fontWeight: '700'
+                                                }}>
+                                                    (You)
+                                                </span>
+                                            )}
+                                        </div>
+                                        <div style={{ fontSize: '13px', color: '#6b7280' }}>
+                                            {participant.type === 'teacher' ? '👨‍🏫 Teacher' : '🎓 Student'}
+                                        </div>
                                     </div>
                                 </div>
-                            </div>
+                            ))}
                         </div>
-                    )}
-                </div>
+                    </div>
+                )}
+
+                {/* Chat Tab */}
+                {activeTab === 'chat' && (
+                    <div style={{ display: 'flex', flexDirection: 'column', height: '500px' }}>
+                        <h3 style={{ fontSize: '20px', fontWeight: '600', marginBottom: '16px', color: '#111827' }}>
+                            Chat
+                        </h3>
+
+                        <div style={{
+                            flex: 1,
+                            overflowY: 'auto',
+                            padding: '16px',
+                            backgroundColor: '#f9fafb',
+                            borderRadius: '12px',
+                            marginBottom: '16px',
+                        }}>
+                            {messages.length === 0 ? (
+                                <div style={{ textAlign: 'center', color: '#9ca3af', paddingTop: '40px' }}>
+                                    No messages yet
+                                </div>
+                            ) : (
+                                messages.map((msg, index) => (
+                                    <div
+                                        key={index}
+                                        style={{
+                                            marginBottom: '12px',
+                                            padding: '12px',
+                                            backgroundColor: msg.user_type === 'teacher' ? '#eff6ff' : 'white',
+                                            borderRadius: '8px',
+                                            border: `2px solid ${msg.user_type === 'teacher' ? '#3b82f6' : '#e5e7eb'}`,
+                                        }}
+                                    >
+                                        <div style={{ fontSize: '13px', fontWeight: '600', color: '#111827', marginBottom: '4px' }}>
+                                            {msg.user_name}
+                                            {msg.user_type === 'teacher' && ' 👨‍🏫'}
+                                        </div>
+                                        <div style={{ fontSize: '14px', color: '#374151' }}>
+                                            {msg.message}
+                                        </div>
+                                        <div style={{ fontSize: '11px', color: '#9ca3af', marginTop: '4px' }}>
+                                            {new Date(msg.timestamp).toLocaleTimeString('en-US', { timeZone: 'GMT' })}
+                                        </div>
+                                    </div>
+                                ))
+                            )}
+                            <div ref={chatEndRef} />
+                        </div>
+
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                            <input
+                                type="text"
+                                value={messageInput}
+                                onChange={(e) => setMessageInput(e.target.value)}
+                                onKeyPress={(e) => e.key === 'Enter' && sendMessage()}
+                                placeholder="Type a message..."
+                                style={{
+                                    flex: 1,
+                                    padding: '12px',
+                                    border: '2px solid #e5e7eb',
+                                    borderRadius: '8px',
+                                    fontSize: '14px',
+                                    outline: 'none',
+                                }}
+                            />
+                            <button
+                                onClick={sendMessage}
+                                disabled={!messageInput.trim()}
+                                style={{
+                                    padding: '12px 24px',
+                                    background: messageInput.trim() ? 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' : '#d1d5db',
+                                    color: 'white',
+                                    border: 'none',
+                                    borderRadius: '8px',
+                                    fontSize: '14px',
+                                    fontWeight: '600',
+                                    cursor: messageInput.trim() ? 'pointer' : 'not-allowed',
+                                }}
+                            >
+                                Send
+                            </button>
+                        </div>
+                    </div>
+                )}
             </div>
         </div>
     );

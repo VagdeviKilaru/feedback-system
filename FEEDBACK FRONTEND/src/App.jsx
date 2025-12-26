@@ -12,7 +12,7 @@ function HomePage() {
             alignItems: 'center',
             justifyContent: 'center',
             minHeight: '100vh',
-            backgroundColor: '#f9fafb',
+            background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
             padding: '20px',
         }}>
             <div style={{ maxWidth: '800px', width: '100%', textAlign: 'center' }}>
@@ -21,28 +21,13 @@ function HomePage() {
                     <h1 style={{
                         fontSize: '52px',
                         fontWeight: 'bold',
-                        background: 'linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%)',
-                        WebkitBackgroundClip: 'text',
-                        WebkitTextFillColor: 'transparent',
+                        color: 'white',
                         marginBottom: '16px',
                         lineHeight: '1.2',
+                        textShadow: '0 4px 6px rgba(0, 0, 0, 0.3)',
                     }}>
                         Live Feedback System
                     </h1>
-                    <p style={{
-                        fontSize: '20px',
-                        color: '#4b5563',
-                        marginBottom: '8px',
-                        fontWeight: '500',
-                    }}>
-                        Real-Time Student Feedback Generator & Attention Tracker
-                    </p>
-                    <p style={{
-                        fontSize: '14px',
-                        color: '#9ca3af',
-                    }}>
-                        Powered by AI & MediaPipe Technology
-                    </p>
                 </div>
 
                 {/* Feature Cards */}
@@ -56,7 +41,7 @@ function HomePage() {
                         backgroundColor: 'white',
                         padding: '24px',
                         borderRadius: '12px',
-                        boxShadow: '0 4px 6px rgba(0, 0, 0, 0.05)',
+                        boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
                         border: '2px solid #e5e7eb',
                     }}>
                         <div style={{ fontSize: '36px', marginBottom: '12px' }}>👁️</div>
@@ -72,7 +57,7 @@ function HomePage() {
                         backgroundColor: 'white',
                         padding: '24px',
                         borderRadius: '12px',
-                        boxShadow: '0 4px 6px rgba(0, 0, 0, 0.05)',
+                        boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
                         border: '2px solid #e5e7eb',
                     }}>
                         <div style={{ fontSize: '36px', marginBottom: '12px' }}>😴</div>
@@ -88,7 +73,7 @@ function HomePage() {
                         backgroundColor: 'white',
                         padding: '24px',
                         borderRadius: '12px',
-                        boxShadow: '0 4px 6px rgba(0, 0, 0, 0.05)',
+                        boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
                         border: '2px solid #e5e7eb',
                     }}>
                         <div style={{ fontSize: '36px', marginBottom: '12px' }}>⚡</div>
@@ -106,7 +91,7 @@ function HomePage() {
                     backgroundColor: 'white',
                     padding: '40px',
                     borderRadius: '16px',
-                    boxShadow: '0 10px 25px rgba(0, 0, 0, 0.1)',
+                    boxShadow: '0 10px 25px rgba(0, 0, 0, 0.2)',
                 }}>
                     <h2 style={{
                         fontSize: '24px',
@@ -134,17 +119,17 @@ function HomePage() {
                                 fontSize: '18px',
                                 fontWeight: '600',
                                 transition: 'all 0.3s ease',
-                                boxShadow: '0 4px 6px rgba(59, 130, 246, 0.2)',
+                                boxShadow: '0 4px 6px rgba(59, 130, 246, 0.3)',
                             }}
                             onMouseEnter={(e) => {
                                 e.target.style.backgroundColor = '#2563eb';
                                 e.target.style.transform = 'translateY(-2px)';
-                                e.target.style.boxShadow = '0 6px 12px rgba(59, 130, 246, 0.3)';
+                                e.target.style.boxShadow = '0 6px 12px rgba(59, 130, 246, 0.4)';
                             }}
                             onMouseLeave={(e) => {
                                 e.target.style.backgroundColor = '#3b82f6';
                                 e.target.style.transform = 'translateY(0)';
-                                e.target.style.boxShadow = '0 4px 6px rgba(59, 130, 246, 0.2)';
+                                e.target.style.boxShadow = '0 4px 6px rgba(59, 130, 246, 0.3)';
                             }}
                         >
                             <div style={{ fontSize: '32px', marginBottom: '8px' }}>🎓</div>
@@ -163,17 +148,17 @@ function HomePage() {
                                 fontSize: '18px',
                                 fontWeight: '600',
                                 transition: 'all 0.3s ease',
-                                boxShadow: '0 4px 6px rgba(139, 92, 246, 0.2)',
+                                boxShadow: '0 4px 6px rgba(139, 92, 246, 0.3)',
                             }}
                             onMouseEnter={(e) => {
                                 e.target.style.backgroundColor = '#7c3aed';
                                 e.target.style.transform = 'translateY(-2px)';
-                                e.target.style.boxShadow = '0 6px 12px rgba(139, 92, 246, 0.3)';
+                                e.target.style.boxShadow = '0 6px 12px rgba(139, 92, 246, 0.4)';
                             }}
                             onMouseLeave={(e) => {
                                 e.target.style.backgroundColor = '#8b5cf6';
                                 e.target.style.transform = 'translateY(0)';
-                                e.target.style.boxShadow = '0 4px 6px rgba(139, 92, 246, 0.2)';
+                                e.target.style.boxShadow = '0 4px 6px rgba(139, 92, 246, 0.3)';
                             }}
                         >
                             <div style={{ fontSize: '32px', marginBottom: '8px' }}>👨‍🏫</div>
@@ -184,54 +169,13 @@ function HomePage() {
                     <div style={{
                         marginTop: '24px',
                         padding: '16px',
-                        backgroundColor: '#eff6ff',
+                        background: 'linear-gradient(135deg, #fef3c7 0%, #fcd34d 100%)',
                         borderRadius: '8px',
                         fontSize: '14px',
-                        color: '#1e40af',
+                        color: '#92400e',
                         lineHeight: '1.6',
                     }}>
-                        <strong>Note:</strong> This system requires camera access. Please allow camera
-                        permissions when prompted. Your video is processed locally and not stored.
-                    </div>
-                </div>
-
-                {/* Tech Stack */}
-                <div style={{
-                    marginTop: '20px',
-                    padding: '20px',
-                    backgroundColor: 'white',
-                    borderRadius: '12px',
-                    boxShadow: '0 2px 4px rgba(0, 0, 0, 0.05)',
-                }}>
-                    <h3 style={{
-                        fontSize: '14px',
-                        fontWeight: '600',
-                        marginBottom: '12px',
-                        color: '#6b7280',
-                    }}>
-                        Built With
-                    </h3>
-                    <div style={{
-                        display: 'flex',
-                        flexWrap: 'wrap',
-                        gap: '12px',
-                        justifyContent: 'center',
-                    }}>
-                        {['React', 'Vite', 'MediaPipe', 'FastAPI', 'WebSockets', 'Python', 'AI/ML'].map(tech => (
-                            <span
-                                key={tech}
-                                style={{
-                                    padding: '6px 12px',
-                                    backgroundColor: '#f3f4f6',
-                                    borderRadius: '16px',
-                                    fontSize: '12px',
-                                    fontWeight: '500',
-                                    color: '#4b5563',
-                                }}
-                            >
-                                {tech}
-                            </span>
-                        ))}
+                        <strong>📹 Note:</strong> Camera access required. Your video is processed locally and not stored.
                     </div>
                 </div>
             </div>
