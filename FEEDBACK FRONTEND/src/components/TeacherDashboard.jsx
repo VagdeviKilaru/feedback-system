@@ -32,13 +32,13 @@ export default function TeacherDashboard() {
   const [isConnected, setIsConnected] = useState(false);
   const [showCamera, setShowCamera] = useState(false);
   const [roomId, setRoomId] = useState(null);
+  const [activeView, setActiveView] = useState('students'); // 'students', 'cameras', 'alerts'
   const [stats, setStats] = useState({
     total: 0,
     attentive: 0,
     needsAttention: 0,
   });
 
-  // Chat
   const [messages, setMessages] = useState([]);
   const [messageInput, setMessageInput] = useState('');
   const [showChat, setShowChat] = useState(false);
@@ -48,8 +48,6 @@ export default function TeacherDashboard() {
   const MAX_ALERTS = 50;
 
   const handleWebSocketMessage = useCallback((message) => {
-    console.log('Teacher received:', message);
-
     switch (message.type) {
       case 'room_created':
         setRoomId(message.data.room_id);
@@ -90,7 +88,6 @@ export default function TeacherDashboard() {
         break;
 
       case 'alert':
-        // Only add alert if student is NOT attentive
         if (message.data.alert_type !== 'attentive') {
           setAlerts(prev => {
             const newAlerts = [{
@@ -132,12 +129,8 @@ export default function TeacherDashboard() {
     wsRef.current = new WebSocketManager(wsUrl, handleWebSocketMessage);
 
     wsRef.current.connect()
-      .then(() => {
-        setIsConnected(true);
-      })
-      .catch(() => {
-        setIsConnected(false);
-      });
+      .then(() => setIsConnected(true))
+      .catch(() => setIsConnected(false));
 
     return () => {
       if (wsRef.current) {
@@ -150,14 +143,10 @@ export default function TeacherDashboard() {
     const total = students.length;
     const attentive = students.filter(s => s.status === 'attentive').length;
     const needsAttention = total - attentive;
-
     setStats({ total, attentive, needsAttention });
   }, [students]);
 
-  const clearAlerts = () => {
-    setAlerts([]);
-  };
-
+  const clearAlerts = () => setAlerts([]);
   const copyRoomCode = () => {
     if (roomId) {
       navigator.clipboard.writeText(roomId);
@@ -176,10 +165,8 @@ export default function TeacherDashboard() {
   };
 
   const handleLeaveClass = () => {
-    if (confirm('Are you sure you want to leave? This will end the class for all students.')) {
-      if (wsRef.current) {
-        wsRef.current.disconnect();
-      }
+    if (confirm('End class for all students?')) {
+      if (wsRef.current) wsRef.current.disconnect();
       window.location.href = '/';
     }
   };
@@ -187,136 +174,41 @@ export default function TeacherDashboard() {
   const formatTime = (timestamp) => {
     const date = new Date(timestamp);
     const now = new Date();
-    const diffMs = now - date;
-    const diffSecs = Math.floor(diffMs / 1000);
+    const diffSecs = Math.floor((now - date) / 1000);
     const diffMins = Math.floor(diffSecs / 60);
-
     if (diffSecs < 60) return `${diffSecs}s ago`;
     if (diffMins < 60) return `${diffMins}m ago`;
-    return date.toLocaleTimeString('en-US', {
-      timeZone: 'GMT',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
+    return date.toLocaleTimeString('en-US', { timeZone: 'GMT', hour: '2-digit', minute: '2-digit' });
   };
 
   const getStatusIcon = (status) => {
-    const icons = {
-      attentive: '✓',
-      looking_away: '👀',
-      drowsy: '😴',
-      distracted: '⚠',
-      offline: '○',
-    };
+    const icons = { attentive: '✓', looking_away: '👀', drowsy: '😴', distracted: '⚠', offline: '○' };
     return icons[status] || '○';
   };
 
   const getSeverityIcon = (severity) => {
-    const icons = {
-      low: 'ℹ️',
-      medium: '⚠️',
-      high: '🚨',
-    };
+    const icons = { low: 'ℹ️', medium: '⚠️', high: '🚨' };
     return icons[severity] || 'ℹ️';
   };
 
   return (
-    <div style={{
-      minHeight: '100vh',
-      background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-      padding: '20px',
-    }}>
+    <div style={{ minHeight: '100vh', background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', padding: '20px' }}>
       {/* Header */}
-      <div style={{
-        backgroundColor: 'white',
-        padding: '20px 24px',
-        marginBottom: '20px',
-        borderRadius: '16px',
-        boxShadow: '0 10px 30px rgba(0, 0, 0, 0.2)',
-      }}>
-        <div style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          marginBottom: roomId ? '16px' : '0',
-          flexWrap: 'wrap',
-          gap: '12px',
-        }}>
-          <div>
-            <h1 style={{
-              fontSize: '24px',
-              fontWeight: 'bold',
-              color: '#111827',
-              margin: 0,
-            }}>
-              Live Feedback System
-            </h1>
-          </div>
-
+      <div style={{ backgroundColor: 'white', padding: '20px 24px', marginBottom: '20px', borderRadius: '16px', boxShadow: '0 10px 30px rgba(0, 0, 0, 0.2)' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: roomId ? '16px' : '0', flexWrap: 'wrap', gap: '12px' }}>
+          <h1 style={{ fontSize: '24px', fontWeight: 'bold', color: '#111827', margin: 0 }}>Live Feedback System</h1>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-              padding: '8px 16px',
-              backgroundColor: isConnected ? '#dcfce7' : '#fee2e2',
-              borderRadius: '20px',
-              fontSize: '14px',
-              fontWeight: '500',
-            }}>
-              <div style={{
-                width: '8px',
-                height: '8px',
-                borderRadius: '50%',
-                backgroundColor: isConnected ? '#22c55e' : '#ef4444',
-              }} />
+            <div style={{ padding: '8px 16px', backgroundColor: isConnected ? '#dcfce7' : '#fee2e2', borderRadius: '20px', fontSize: '14px', fontWeight: '500' }}>
+              <div style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: isConnected ? '#22c55e' : '#ef4444', display: 'inline-block', marginRight: '8px' }} />
               {isConnected ? 'Connected' : 'Disconnected'}
             </div>
-
-            <button
-              onClick={() => setShowCamera(!showCamera)}
-              style={{
-                padding: '8px 16px',
-                backgroundColor: '#f3f4f6',
-                border: 'none',
-                borderRadius: '8px',
-                cursor: 'pointer',
-                fontSize: '14px',
-                fontWeight: '500',
-              }}
-            >
+            <button onClick={() => setShowCamera(!showCamera)} style={{ padding: '8px 16px', backgroundColor: '#f3f4f6', border: 'none', borderRadius: '8px', cursor: 'pointer', fontSize: '14px', fontWeight: '500' }}>
               {showCamera ? 'Hide' : 'Show'} My Camera
             </button>
-
-            <button
-              onClick={() => setShowChat(!showChat)}
-              style={{
-                padding: '8px 16px',
-                backgroundColor: '#3b82f6',
-                color: 'white',
-                border: 'none',
-                borderRadius: '8px',
-                cursor: 'pointer',
-                fontSize: '14px',
-                fontWeight: '600',
-              }}
-            >
+            <button onClick={() => setShowChat(!showChat)} style={{ padding: '8px 16px', backgroundColor: '#3b82f6', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontSize: '14px', fontWeight: '600' }}>
               💬 Chat {messages.length > 0 && `(${messages.length})`}
             </button>
-
-            <button
-              onClick={handleLeaveClass}
-              style={{
-                padding: '8px 16px',
-                backgroundColor: '#ef4444',
-                color: 'white',
-                border: 'none',
-                borderRadius: '8px',
-                cursor: 'pointer',
-                fontSize: '14px',
-                fontWeight: '600',
-              }}
-            >
+            <button onClick={handleLeaveClass} style={{ padding: '8px 16px', backgroundColor: '#ef4444', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontSize: '14px', fontWeight: '600' }}>
               Leave Class
             </button>
           </div>
@@ -324,206 +216,63 @@ export default function TeacherDashboard() {
 
         {/* Room Code */}
         {roomId ? (
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            padding: '20px 24px',
-            background: 'linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%)',
-            borderRadius: '12px',
-            border: '3px solid #3b82f6',
-            marginBottom: '16px',
-            boxShadow: '0 4px 6px rgba(59, 130, 246, 0.1)',
-            flexWrap: 'wrap',
-            gap: '16px',
-          }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '20px 24px', background: 'linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%)', borderRadius: '12px', border: '3px solid #3b82f6', marginBottom: '16px', flexWrap: 'wrap', gap: '16px' }}>
             <div>
-              <div style={{
-                fontSize: '13px',
-                color: '#1e40af',
-                marginBottom: '8px',
-                fontWeight: '600',
-                textTransform: 'uppercase',
-                letterSpacing: '1px',
-              }}>
-                📋 Room Code - Share with Students
+              <div style={{ fontSize: '13px', color: '#1e40af', marginBottom: '8px', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '1px' }}>
+                📋 Room Code
               </div>
-              <div style={{
-                fontSize: '42px',
-                fontWeight: 'bold',
-                color: '#1e3a8a',
-                letterSpacing: '8px',
-                fontFamily: 'monospace',
-              }}>
+              <div style={{ fontSize: '42px', fontWeight: 'bold', color: '#1e3a8a', letterSpacing: '8px', fontFamily: 'monospace' }}>
                 {roomId}
               </div>
             </div>
-            <button
-              onClick={copyRoomCode}
-              style={{
-                padding: '14px 28px',
-                backgroundColor: '#3b82f6',
-                color: 'white',
-                border: 'none',
-                borderRadius: '8px',
-                cursor: 'pointer',
-                fontSize: '15px',
-                fontWeight: '600',
-                boxShadow: '0 4px 6px rgba(59, 130, 246, 0.3)',
-              }}
-            >
+            <button onClick={copyRoomCode} style={{ padding: '14px 28px', backgroundColor: '#3b82f6', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontSize: '15px', fontWeight: '600' }}>
               📋 Copy Code
             </button>
           </div>
         ) : (
-          <div style={{
-            padding: '16px',
-            backgroundColor: '#fef3c7',
-            borderRadius: '8px',
-            marginBottom: '16px',
-            fontSize: '14px',
-            color: '#92400e',
-            textAlign: 'center',
-            fontWeight: '500',
-          }}>
+          <div style={{ padding: '16px', backgroundColor: '#fef3c7', borderRadius: '8px', marginBottom: '16px', fontSize: '14px', color: '#92400e', textAlign: 'center', fontWeight: '500' }}>
             ⏳ Generating room code...
           </div>
         )}
 
         {/* Stats */}
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-          gap: '16px',
-        }}>
-          <div style={{
-            padding: '16px',
-            background: 'linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%)',
-            borderRadius: '10px',
-            border: '2px solid #3b82f6',
-          }}>
-            <div style={{ fontSize: '12px', color: '#1e40af', marginBottom: '4px', fontWeight: '600' }}>
-              Total Students
-            </div>
-            <div style={{ fontSize: '28px', fontWeight: 'bold', color: '#1e3a8a' }}>
-              {stats.total}
-            </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
+          <div style={{ padding: '16px', background: 'linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%)', borderRadius: '10px', border: '2px solid #3b82f6' }}>
+            <div style={{ fontSize: '12px', color: '#1e40af', marginBottom: '4px', fontWeight: '600' }}>Total Students</div>
+            <div style={{ fontSize: '28px', fontWeight: 'bold', color: '#1e3a8a' }}>{stats.total}</div>
           </div>
-
-          <div style={{
-            padding: '16px',
-            background: 'linear-gradient(135deg, #dcfce7 0%, #bbf7d0 100%)',
-            borderRadius: '10px',
-            border: '2px solid #22c55e',
-          }}>
-            <div style={{ fontSize: '12px', color: '#166534', marginBottom: '4px', fontWeight: '600' }}>
-              Attentive
-            </div>
-            <div style={{ fontSize: '28px', fontWeight: 'bold', color: '#14532d' }}>
-              {stats.attentive}
-            </div>
+          <div style={{ padding: '16px', background: 'linear-gradient(135deg, #dcfce7 0%, #bbf7d0 100%)', borderRadius: '10px', border: '2px solid #22c55e' }}>
+            <div style={{ fontSize: '12px', color: '#166534', marginBottom: '4px', fontWeight: '600' }}>Attentive</div>
+            <div style={{ fontSize: '28px', fontWeight: 'bold', color: '#14532d' }}>{stats.attentive}</div>
           </div>
-
-          <div style={{
-            padding: '16px',
-            background: 'linear-gradient(135deg, #fee2e2 0%, #fecaca 100%)',
-            borderRadius: '10px',
-            border: '2px solid #ef4444',
-          }}>
-            <div style={{ fontSize: '12px', color: '#991b1b', marginBottom: '4px', fontWeight: '600' }}>
-              Needs Attention
-            </div>
-            <div style={{ fontSize: '28px', fontWeight: 'bold', color: '#7f1d1d' }}>
-              {stats.needsAttention}
-            </div>
+          <div style={{ padding: '16px', background: 'linear-gradient(135deg, #fee2e2 0%, #fecaca 100%)', borderRadius: '10px', border: '2px solid #ef4444' }}>
+            <div style={{ fontSize: '12px', color: '#991b1b', marginBottom: '4px', fontWeight: '600' }}>Needs Attention</div>
+            <div style={{ fontSize: '28px', fontWeight: 'bold', color: '#7f1d1d' }}>{stats.needsAttention}</div>
           </div>
-
-          <div style={{
-            padding: '16px',
-            background: 'linear-gradient(135deg, #fef3c7 0%, #fde68a 100%)',
-            borderRadius: '10px',
-            border: '2px solid #f59e0b',
-          }}>
-            <div style={{ fontSize: '12px', color: '#92400e', marginBottom: '4px', fontWeight: '600' }}>
-              Active Alerts
-            </div>
-            <div style={{ fontSize: '28px', fontWeight: 'bold', color: '#78350f' }}>
-              {alerts.length}
-            </div>
+          <div style={{ padding: '16px', background: 'linear-gradient(135deg, #fef3c7 0%, #fde68a 100%)', borderRadius: '10px', border: '2px solid #f59e0b' }}>
+            <div style={{ fontSize: '12px', color: '#92400e', marginBottom: '4px', fontWeight: '600' }}>Active Alerts</div>
+            <div style={{ fontSize: '28px', fontWeight: 'bold', color: '#78350f' }}>{alerts.length}</div>
           </div>
         </div>
       </div>
 
       {/* Chat Sidebar */}
       {showChat && (
-        <div style={{
-          position: 'fixed',
-          top: '20px',
-          right: '20px',
-          width: '350px',
-          height: 'calc(100vh - 40px)',
-          backgroundColor: 'white',
-          borderRadius: '16px',
-          boxShadow: '0 20px 60px rgba(0, 0, 0, 0.3)',
-          display: 'flex',
-          flexDirection: 'column',
-          zIndex: 1000,
-        }}>
-          <div style={{
-            padding: '20px',
-            borderBottom: '2px solid #e5e7eb',
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-          }}>
-            <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#111827', margin: 0 }}>
-              💬 Chat
-            </h3>
-            <button
-              onClick={() => setShowChat(false)}
-              style={{
-                padding: '6px 12px',
-                backgroundColor: '#f3f4f6',
-                border: 'none',
-                borderRadius: '6px',
-                cursor: 'pointer',
-                fontSize: '14px',
-                fontWeight: '600',
-              }}
-            >
-              ✕
-            </button>
+        <div style={{ position: 'fixed', top: '20px', right: '20px', width: '350px', height: 'calc(100vh - 40px)', backgroundColor: 'white', borderRadius: '16px', boxShadow: '0 20px 60px rgba(0, 0, 0, 0.3)', display: 'flex', flexDirection: 'column', zIndex: 1000 }}>
+          <div style={{ padding: '20px', borderBottom: '2px solid #e5e7eb', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#111827', margin: 0 }}>💬 Chat</h3>
+            <button onClick={() => setShowChat(false)} style={{ padding: '6px 12px', backgroundColor: '#f3f4f6', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '14px', fontWeight: '600' }}>✕</button>
           </div>
-
-          <div style={{
-            flex: 1,
-            overflowY: 'auto',
-            padding: '16px',
-            backgroundColor: '#f9fafb',
-          }}>
+          <div style={{ flex: 1, overflowY: 'auto', padding: '16px', backgroundColor: '#f9fafb' }}>
             {messages.length === 0 ? (
-              <div style={{ textAlign: 'center', color: '#9ca3af', paddingTop: '40px', fontSize: '14px' }}>
-                No messages yet
-              </div>
+              <div style={{ textAlign: 'center', color: '#9ca3af', paddingTop: '40px', fontSize: '14px' }}>No messages yet</div>
             ) : (
               messages.map((msg, index) => (
-                <div
-                  key={index}
-                  style={{
-                    marginBottom: '12px',
-                    padding: '12px',
-                    backgroundColor: msg.user_type === 'teacher' ? '#eff6ff' : 'white',
-                    borderRadius: '8px',
-                    border: `2px solid ${msg.user_type === 'teacher' ? '#3b82f6' : '#e5e7eb'}`,
-                  }}
-                >
+                <div key={index} style={{ marginBottom: '12px', padding: '12px', backgroundColor: msg.user_type === 'teacher' ? '#eff6ff' : 'white', borderRadius: '8px', border: `2px solid ${msg.user_type === 'teacher' ? '#3b82f6' : '#e5e7eb'}` }}>
                   <div style={{ fontSize: '13px', fontWeight: '600', color: '#111827', marginBottom: '4px' }}>
-                    {msg.user_name}
-                    {msg.user_type === 'teacher' && ' 👨‍🏫'}
+                    {msg.user_name}{msg.user_type === 'teacher' && ' 👨‍🏫'}
                   </div>
-                  <div style={{ fontSize: '14px', color: '#374151' }}>
-                    {msg.message}
-                  </div>
+                  <div style={{ fontSize: '14px', color: '#374151' }}>{msg.message}</div>
                   <div style={{ fontSize: '11px', color: '#9ca3af', marginTop: '4px' }}>
                     {new Date(msg.timestamp).toLocaleTimeString('en-US', { timeZone: 'GMT' })}
                   </div>
@@ -532,325 +281,146 @@ export default function TeacherDashboard() {
             )}
             <div ref={chatEndRef} />
           </div>
-
           <div style={{ padding: '16px', borderTop: '2px solid #e5e7eb', display: 'flex', gap: '8px' }}>
-            <input
-              type="text"
-              value={messageInput}
-              onChange={(e) => setMessageInput(e.target.value)}
-              onKeyPress={(e) => e.key === 'Enter' && sendMessage()}
-              placeholder="Type message..."
-              style={{
-                flex: 1,
-                padding: '12px',
-                border: '2px solid #e5e7eb',
-                borderRadius: '8px',
-                fontSize: '14px',
-                outline: 'none',
-              }}
-            />
-            <button
-              onClick={sendMessage}
-              disabled={!messageInput.trim()}
-              style={{
-                padding: '12px 20px',
-                background: messageInput.trim() ? 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' : '#d1d5db',
-                color: 'white',
-                border: 'none',
-                borderRadius: '8px',
-                fontSize: '14px',
-                fontWeight: '600',
-                cursor: messageInput.trim() ? 'pointer' : 'not-allowed',
-              }}
-            >
+            <input type="text" value={messageInput} onChange={(e) => setMessageInput(e.target.value)} onKeyPress={(e) => e.key === 'Enter' && sendMessage()} placeholder="Type..." style={{ flex: 1, padding: '12px', border: '2px solid #e5e7eb', borderRadius: '8px', fontSize: '14px', outline: 'none' }} />
+            <button onClick={sendMessage} disabled={!messageInput.trim()} style={{ padding: '12px 20px', background: messageInput.trim() ? 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' : '#d1d5db', color: 'white', border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: '600', cursor: messageInput.trim() ? 'pointer' : 'not-allowed' }}>
               Send
             </button>
           </div>
         </div>
       )}
 
+      {/* Navigation Tabs */}
+      <div style={{ backgroundColor: 'white', padding: '8px', borderRadius: '12px', marginBottom: '20px', display: 'flex', gap: '8px', boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)' }}>
+        <button onClick={() => setActiveView('students')} style={{ flex: 1, padding: '12px', background: activeView === 'students' ? 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' : 'transparent', color: activeView === 'students' ? 'white' : '#6b7280', border: 'none', borderRadius: '8px', fontSize: '15px', fontWeight: '600', cursor: 'pointer' }}>
+          👥 Students List
+        </button>
+        <button onClick={() => setActiveView('cameras')} style={{ flex: 1, padding: '12px', background: activeView === 'cameras' ? 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' : 'transparent', color: activeView === 'cameras' ? 'white' : '#6b7280', border: 'none', borderRadius: '8px', fontSize: '15px', fontWeight: '600', cursor: 'pointer' }}>
+          📹 Student Cameras
+        </button>
+        <button onClick={() => setActiveView('alerts')} style={{ flex: 1, padding: '12px', background: activeView === 'alerts' ? 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' : 'transparent', color: activeView === 'alerts' ? 'white' : '#6b7280', border: 'none', borderRadius: '8px', fontSize: '15px', fontWeight: '600', cursor: 'pointer' }}>
+          🚨 Alerts ({alerts.length})
+        </button>
+      </div>
+
       {/* Main Content */}
-      <div style={{
-        display: 'grid',
-        gridTemplateColumns: showCamera ? '350px 1fr 1fr' : '1fr 1fr',
-        gap: '20px',
-        alignItems: 'start',
-      }}>
-        {/* Teacher Camera */}
+      <div style={{ display: 'grid', gridTemplateColumns: showCamera ? '350px 1fr' : '1fr', gap: '20px', alignItems: 'start' }}>
         {showCamera && (
-          <div style={{
-            backgroundColor: 'white',
-            padding: '20px',
-            borderRadius: '16px',
-            boxShadow: '0 10px 30px rgba(0, 0, 0, 0.2)',
-          }}>
-            <h3 style={{
-              fontSize: '16px',
-              fontWeight: '600',
-              marginBottom: '12px',
-              color: '#111827',
-            }}>
-              Your Camera
-            </h3>
-            <VideoCapture
-              isActive={showCamera}
-              showMirror={true}
-            />
+          <div style={{ backgroundColor: 'white', padding: '20px', borderRadius: '16px', boxShadow: '0 10px 30px rgba(0, 0, 0, 0.2)' }}>
+            <h3 style={{ fontSize: '16px', fontWeight: '600', marginBottom: '12px', color: '#111827' }}>Your Camera</h3>
+            <VideoCapture isActive={showCamera} showMirror={true} />
           </div>
         )}
 
-        {/* Student List (NO CAMERA BOXES) */}
-        <div style={{
-          backgroundColor: 'white',
-          borderRadius: '16px',
-          padding: '20px',
-          boxShadow: '0 10px 30px rgba(0, 0, 0, 0.2)',
-          minHeight: '600px',
-        }}>
-          <h3 style={{
-            fontSize: '18px',
-            fontWeight: '600',
-            color: '#111827',
-            marginBottom: '16px',
-          }}>
-            Students ({students.length})
-          </h3>
-
-          {students.length === 0 ? (
-            <div style={{
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              justifyContent: 'center',
-              height: '400px',
-              color: '#9ca3af',
-              fontSize: '14px',
-              textAlign: 'center',
-            }}>
-              <div style={{ fontSize: '64px', marginBottom: '16px' }}>👥</div>
-              <div style={{ fontWeight: '600', marginBottom: '8px' }}>No students connected</div>
-              <div>Share code <strong style={{ fontFamily: 'monospace' }}>{roomId || '...'}</strong></div>
-            </div>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              {students.map((student) => (
-                <div
-                  key={student.id}
-                  style={{
-                    padding: '16px',
-                    border: `3px solid ${STATUS_COLORS[student.status]}`,
-                    borderRadius: '12px',
-                    backgroundColor: '#fafafa',
-                    transition: 'all 0.3s ease',
-                  }}
-                >
-                  <div style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'flex-start',
-                    marginBottom: '8px',
-                  }}>
-                    <div>
-                      <div style={{
-                        fontWeight: '600',
-                        fontSize: '16px',
-                        color: '#111827',
-                        marginBottom: '4px',
-                      }}>
-                        {student.name}
-                      </div>
-                      <div style={{
-                        fontSize: '12px',
-                        color: '#6b7280',
-                      }}>
-                        ID: {student.id.substring(0, 8)}...
-                      </div>
-                    </div>
-
-                    <div style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '6px',
-                      padding: '8px 16px',
-                      backgroundColor: STATUS_COLORS[student.status],
-                      color: 'white',
-                      borderRadius: '20px',
-                      fontSize: '14px',
-                      fontWeight: '600',
-                      boxShadow: `0 2px 8px ${STATUS_COLORS[student.status]}66`,
-                    }}>
-                      <span>{getStatusIcon(student.status)}</span>
-                      <span>{STATUS_LABELS[student.status]}</span>
-                    </div>
-                  </div>
-
-                  <div style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    fontSize: '12px',
-                    color: '#6b7280',
-                  }}>
-                    <span>Updated: {formatTime(student.last_update)}</span>
-                    {student.alerts_count > 0 && (
-                      <span style={{
-                        backgroundColor: '#fee2e2',
-                        color: '#dc2626',
-                        padding: '4px 12px',
-                        borderRadius: '12px',
-                        fontWeight: '600',
-                        fontSize: '11px',
-                      }}>
-                        {student.alerts_count} Alert{student.alerts_count !== 1 ? 's' : ''}
-                      </span>
-                    )}
-                  </div>
+        <div style={{ backgroundColor: 'white', borderRadius: '16px', padding: '20px', boxShadow: '0 10px 30px rgba(0, 0, 0, 0.2)', minHeight: '600px' }}>
+          {/* STUDENTS LIST VIEW */}
+          {activeView === 'students' && (
+            <>
+              <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#111827', marginBottom: '16px' }}>Students ({students.length})</h3>
+              {students.length === 0 ? (
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '400px', color: '#9ca3af', fontSize: '14px', textAlign: 'center' }}>
+                  <div style={{ fontSize: '64px', marginBottom: '16px' }}>👥</div>
+                  <div style={{ fontWeight: '600', marginBottom: '8px' }}>No students connected</div>
+                  <div>Share code <strong style={{ fontFamily: 'monospace' }}>{roomId || '...'}</strong></div>
                 </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* Alerts */}
-        <div style={{
-          backgroundColor: 'white',
-          borderRadius: '16px',
-          padding: '20px',
-          boxShadow: '0 10px 30px rgba(0, 0, 0, 0.2)',
-          minHeight: '600px',
-          maxHeight: '600px',
-          display: 'flex',
-          flexDirection: 'column',
-        }}>
-          <div style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            marginBottom: '16px',
-          }}>
-            <h3 style={{
-              fontSize: '18px',
-              fontWeight: '600',
-              color: '#111827',
-              margin: 0,
-            }}>
-              Real-Time Alerts
-            </h3>
-            {alerts.length > 0 && (
-              <span style={{
-                backgroundColor: '#fee2e2',
-                color: '#dc2626',
-                padding: '4px 12px',
-                borderRadius: '12px',
-                fontSize: '12px',
-                fontWeight: '600',
-              }}>
-                {alerts.length} Active
-              </span>
-            )}
-          </div>
-
-          <div style={{
-            flex: 1,
-            overflowY: 'auto',
-          }}>
-            {alerts.length === 0 ? (
-              <div style={{
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                justifyContent: 'center',
-                height: '100%',
-                color: '#9ca3af',
-                fontSize: '14px',
-              }}>
-                <div style={{ fontSize: '48px', marginBottom: '12px' }}>✓</div>
-                <div style={{ fontWeight: '600' }}>All students attentive</div>
-              </div>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                {alerts.map((alert, index) => (
-                  <div
-                    key={`${alert.student_id}-${alert.timestamp}-${index}`}
-                    style={{
-                      padding: '16px',
-                      border: `2px solid ${ALERT_SEVERITY_COLORS[alert.severity]}`,
-                      borderLeft: `6px solid ${ALERT_SEVERITY_COLORS[alert.severity]}`,
-                      borderRadius: '8px',
-                      backgroundColor: '#fafafa',
-                    }}
-                  >
-                    <div style={{
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'flex-start',
-                      marginBottom: '8px',
-                    }}>
-                      <div style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '8px',
-                      }}>
-                        <span style={{ fontSize: '20px' }}>
-                          {getSeverityIcon(alert.severity)}
-                        </span>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  {students.map((student) => (
+                    <div key={student.id} style={{ padding: '16px', border: `3px solid ${STATUS_COLORS[student.status]}`, borderRadius: '12px', backgroundColor: '#fafafa' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
                         <div>
-                          <div style={{
-                            fontWeight: '600',
-                            fontSize: '15px',
-                            color: '#111827',
-                          }}>
-                            {alert.student_name}
-                          </div>
-                          <div style={{
-                            fontSize: '12px',
-                            color: '#6b7280',
-                            marginTop: '2px',
-                          }}>
-                            {alert.alert_type.replace('_', ' ')}
-                          </div>
+                          <div style={{ fontWeight: '600', fontSize: '16px', color: '#111827', marginBottom: '4px' }}>{student.name}</div>
+                          <div style={{ fontSize: '12px', color: '#6b7280' }}>ID: {student.id.substring(0, 8)}...</div>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 16px', backgroundColor: STATUS_COLORS[student.status], color: 'white', borderRadius: '20px', fontSize: '14px', fontWeight: '600' }}>
+                          <span>{getStatusIcon(student.status)}</span>
+                          <span>{STATUS_LABELS[student.status]}</span>
                         </div>
                       </div>
-
-                      <div style={{
-                        fontSize: '11px',
-                        color: '#9ca3af',
-                        whiteSpace: 'nowrap',
-                      }}>
-                        {formatTime(alert.timestamp)}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#6b7280' }}>
+                        <span>Updated: {formatTime(student.last_update)}</span>
+                        {student.alerts_count > 0 && (
+                          <span style={{ backgroundColor: '#fee2e2', color: '#dc2626', padding: '4px 12px', borderRadius: '12px', fontWeight: '600', fontSize: '11px' }}>
+                            {student.alerts_count} Alert{student.alerts_count !== 1 ? 's' : ''}
+                          </span>
+                        )}
                       </div>
                     </div>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
 
-                    <div style={{
-                      fontSize: '14px',
-                      color: '#4b5563',
-                      lineHeight: '1.5',
-                    }}>
-                      {alert.message}
+          {/* STUDENT CAMERAS VIEW */}
+          {activeView === 'cameras' && (
+            <>
+              <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#111827', marginBottom: '16px' }}>Student Cameras ({students.length})</h3>
+              {students.length === 0 ? (
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '400px', color: '#9ca3af', fontSize: '14px', textAlign: 'center' }}>
+                  <div style={{ fontSize: '64px', marginBottom: '16px' }}>📹</div>
+                  <div style={{ fontWeight: '600' }}>No student cameras</div>
+                </div>
+              ) : (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: '16px' }}>
+                  {students.map((student) => (
+                    <div key={student.id} style={{ border: `3px solid ${STATUS_COLORS[student.status]}`, borderRadius: '12px', backgroundColor: '#fafafa', padding: '12px' }}>
+                      <div style={{ width: '100%', height: '180px', backgroundColor: '#e5e7eb', borderRadius: '8px', marginBottom: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '64px', background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', color: 'white', fontWeight: 'bold' }}>
+                        {student.name.charAt(0).toUpperCase()}
+                      </div>
+                      <div style={{ fontWeight: '600', fontSize: '15px', color: '#111827', marginBottom: '8px', textAlign: 'center' }}>{student.name}</div>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', padding: '6px 10px', backgroundColor: STATUS_COLORS[student.status], color: 'white', borderRadius: '12px', fontSize: '13px', fontWeight: '600' }}>
+                        <span>{getStatusIcon(student.status)}</span>
+                        <span>{STATUS_LABELS[student.status]}</span>
+                      </div>
                     </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
 
-          {alerts.length > 0 && (
-            <button
-              onClick={clearAlerts}
-              style={{
-                marginTop: '12px',
-                width: '100%',
-                padding: '12px',
-                backgroundColor: '#ef4444',
-                color: 'white',
-                border: 'none',
-                borderRadius: '8px',
-                cursor: 'pointer',
-                fontSize: '14px',
-                fontWeight: '500',
-              }}
-            >
-              Clear All Alerts
-            </button>
+          {/* ALERTS VIEW */}
+          {activeView === 'alerts' && (
+            <>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#111827', margin: 0 }}>Real-Time Alerts</h3>
+                {alerts.length > 0 && (
+                  <span style={{ backgroundColor: '#fee2e2', color: '#dc2626', padding: '4px 12px', borderRadius: '12px', fontSize: '12px', fontWeight: '600' }}>
+                    {alerts.length} Active
+                  </span>
+                )}
+              </div>
+              {alerts.length === 0 ? (
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '400px', color: '#9ca3af', fontSize: '14px' }}>
+                  <div style={{ fontSize: '48px', marginBottom: '12px' }}>✓</div>
+                  <div style={{ fontWeight: '600' }}>All students attentive</div>
+                </div>
+              ) : (
+                <>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '16px' }}>
+                    {alerts.map((alert, index) => (
+                      <div key={`${alert.student_id}-${alert.timestamp}-${index}`} style={{ padding: '16px', border: `2px solid ${ALERT_SEVERITY_COLORS[alert.severity]}`, borderLeft: `6px solid ${ALERT_SEVERITY_COLORS[alert.severity]}`, borderRadius: '8px', backgroundColor: '#fafafa' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <span style={{ fontSize: '20px' }}>{getSeverityIcon(alert.severity)}</span>
+                            <div>
+                              <div style={{ fontWeight: '600', fontSize: '15px', color: '#111827' }}>{alert.student_name}</div>
+                              <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '2px' }}>{alert.alert_type.replace('_', ' ')}</div>
+                            </div>
+                          </div>
+                          <div style={{ fontSize: '11px', color: '#9ca3af', whiteSpace: 'nowrap' }}>{formatTime(alert.timestamp)}</div>
+                        </div>
+                        <div style={{ fontSize: '14px', color: '#4b5563', lineHeight: '1.5' }}>{alert.message}</div>
+                      </div>
+                    ))}
+                  </div>
+                  <button onClick={clearAlerts} style={{ width: '100%', padding: '12px', backgroundColor: '#ef4444', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontSize: '14px', fontWeight: '500' }}>
+                    Clear All Alerts
+                  </button>
+                </>
+              )}
+            </>
           )}
         </div>
       </div>
