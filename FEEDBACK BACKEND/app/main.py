@@ -26,12 +26,11 @@ app = FastAPI(
 # Configure CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"],  # In production, specify your frontend URL
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
 # Root endpoint
 @app.get("/")
 async def root():
@@ -258,10 +257,4 @@ async def teacher_websocket(
         print(f"❌ Error in teacher websocket: {e}")
         await manager.disconnect_teacher(websocket)
 
-if __name__ == "__main__":
-    print("🚀 Starting Live Feedback System Backend...")
-    print("📡 WebSocket endpoints:")
-    print("   - Student: ws://localhost:8000/ws/student/{room_id}/{student_id}?name={name}")
-    print("   - Teacher: ws://localhost:8000/ws/teacher?name={name}")
-    print("🌐 API running at: http://localhost:8000")
-    print("📖 API Docs at: http://localhost:8000/docs")
+
