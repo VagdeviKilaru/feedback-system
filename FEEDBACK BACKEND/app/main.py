@@ -105,6 +105,8 @@ async def student_websocket(
     if not success:
         return
     
+    print(f"✅ Student {name} ({student_id}) joined room {room_id}")
+    
     # Send current participant list to the newly joined student
     current_participants = []
     
@@ -160,12 +162,18 @@ async def student_websocket(
                 if alert:
                     await manager.send_alert(room_id, student_id, alert)
             
+            elif message_type == "camera_frame":
+                # RECEIVE CAMERA FRAME FROM STUDENT AND BROADCAST TO TEACHERS
+                frame_data = data.get("frame")
+                if frame_data:
+                    await manager.broadcast_camera_frame(room_id, student_id, frame_data)
+            
             elif message_type == "heartbeat":
                 await websocket.send_json({"type": "heartbeat_ack"})
             
             elif message_type == "chat_message":
                 # Broadcast chat to room (with IST timestamp)
-                await manager.broadcast_to_room_teachers(room_id, {
+                chat_data = {
                     "type": "chat_message",
                     "data": {
                         "user_id": student_id,
@@ -174,24 +182,20 @@ async def student_websocket(
                         "message": data.get("message"),
                         "timestamp": get_ist_timestamp()  # IST
                     }
-                })
-                # Also broadcast to other students
-                await manager.broadcast_to_room_students(room_id, {
-                    "type": "chat_message",
-                    "data": {
-                        "user_id": student_id,
-                        "user_name": name,
-                        "user_type": "student",
-                        "message": data.get("message"),
-                        "timestamp": get_ist_timestamp()  # IST
-                    }
-                })
+                }
+                
+                # Send to all teachers
+                await manager.broadcast_to_room_teachers(room_id, chat_data)
+                
+                # Send to all students (including sender)
+                await manager.broadcast_to_room_students(room_id, chat_data)
     
     except WebSocketDisconnect:
+        print(f"❌ Student {name} ({student_id}) disconnected from room {room_id}")
         await manager.disconnect_student(room_id, student_id)
         analyzer.reset_student_tracking(student_id)
     except Exception as e:
-        print(f"Error in student websocket: {e}")
+        print(f"❌ Error in student websocket for {name} ({student_id}): {e}")
         await manager.disconnect_student(room_id, student_id)
         analyzer.reset_student_tracking(student_id)
 
@@ -206,6 +210,8 @@ async def teacher_websocket(
     """WebSocket endpoint for teachers - creates or joins a room"""
     
     created_room_id = await manager.connect_teacher(websocket, room_id, name)
+    
+    print(f"✅ Teacher connected - Room: {created_room_id}")
     
     try:
         while True:
@@ -228,7 +234,7 @@ async def teacher_websocket(
             
             elif message_type == "chat_message":
                 # Broadcast chat to room (with IST timestamp)
-                await manager.broadcast_to_room_teachers(created_room_id, {
+                chat_data = {
                     "type": "chat_message",
                     "data": {
                         "user_id": "teacher",
@@ -237,23 +243,25 @@ async def teacher_websocket(
                         "message": data.get("message"),
                         "timestamp": get_ist_timestamp()  # IST
                     }
-                })
-                # Also broadcast to students
-                await manager.broadcast_to_room_students(created_room_id, {
-                    "type": "chat_message",
-                    "data": {
-                        "user_id": "teacher",
-                        "user_name": name,
-                        "user_type": "teacher",
-                        "message": data.get("message"),
-                        "timestamp": get_ist_timestamp()  # IST
-                    }
-                })
+                }
+                
+                # Send to all teachers in room
+                await manager.broadcast_to_room_teachers(created_room_id, chat_data)
+                
+                # Send to all students in room
+                await manager.broadcast_to_room_students(created_room_id, chat_data)
     
     except WebSocketDisconnect:
+        print(f"❌ Teacher disconnected from room {created_room_id}")
         await manager.disconnect_teacher(websocket)
     except Exception as e:
-        print(f"Error in teacher websocket: {e}")
+        print(f"❌ Error in teacher websocket: {e}")
         await manager.disconnect_teacher(websocket)
 
-
+if __name__ == "__main__":
+    print("🚀 Starting Live Feedback System Backend...")
+    print("📡 WebSocket endpoints:")
+    print("   - Student: ws://localhost:8000/ws/student/{room_id}/{student_id}?name={name}")
+    print("   - Teacher: ws://localhost:8000/ws/teacher?name={name}")
+    print("🌐 API running at: http://localhost:8000")
+    print("📖 API Docs at: http://localhost:8000/docs")

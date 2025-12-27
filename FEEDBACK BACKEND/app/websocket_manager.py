@@ -218,6 +218,22 @@ class ConnectionManager:
             }
         })
 
+    async def broadcast_camera_frame(self, room_id: str, student_id: str, frame_data: str):
+        """Broadcast camera frame from student to all teachers in room"""
+        if room_id not in self.rooms_teachers:
+            return
+        
+        message = {
+            "type": "camera_frame",
+            "data": {
+                "student_id": student_id,
+                "frame": frame_data,
+                "timestamp": datetime.now().isoformat()
+            }
+        }
+        
+        await self.broadcast_to_room_teachers(room_id, message)
+
     def room_exists(self, room_id: str) -> bool:
         return room_id in self.rooms_teachers
 

@@ -3,12 +3,14 @@ import { FaceMesh } from '@mediapipe/face_mesh';
 import { Camera } from '@mediapipe/camera_utils';
 import { classifyAttention, getStatusColor, getStatusLabel } from '../utils/detection';
 
-export default function StudentCamera({ studentId, studentName, onStatusChange }) {
+export default function StudentCamera({ studentId, studentName, onStatusChange, onFrameCapture }) {
     const videoRef = useRef(null);
+    const canvasRef = useRef(null);
     const [currentStatus, setCurrentStatus] = useState('no_face');
     const [cameraActive, setCameraActive] = useState(false);
     const lastStatusRef = useRef('no_face');
     const lastSentTimeRef = useRef(0);
+    const frameIntervalRef = useRef(null);
 
     useEffect(() => {
         let camera = null;
@@ -27,7 +29,26 @@ export default function StudentCamera({ studentId, studentName, onStatusChange }
                 await videoRef.current.play();
                 setCameraActive(true);
 
-                // Initialize FaceMesh
+                // Create canvas for frame capture
+                const canvas = canvasRef.current;
+                if (canvas) {
+                    canvas.width = 640;
+                    canvas.height = 480;
+                }
+
+                // Send frames every 1 second to teacher
+                frameIntervalRef.current = setInterval(() => {
+                    if (videoRef.current && canvasRef.current && onFrameCapture) {
+                        const ctx = canvas.getContext('2d');
+                        ctx.drawImage(videoRef.current, 0, 0, 640, 480);
+
+                        // Convert to base64 image (JPEG with 60% quality for smaller size)
+                        const frameData = canvas.toDataURL('image/jpeg', 0.6);
+                        onFrameCapture(frameData);
+                    }
+                }, 1000); // Every 1 second
+
+                // Initialize FaceMesh for detection
                 faceMesh = new FaceMesh({
                     locateFile: (file) =>
                         `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`,
@@ -52,7 +73,6 @@ export default function StudentCamera({ studentId, studentName, onStatusChange }
 
                     setCurrentStatus(detection.status);
 
-                    // Send status change (throttle to 500ms)
                     if (
                         detection.status !== lastStatusRef.current ||
                         now - lastSentTimeRef.current > 500
@@ -66,7 +86,6 @@ export default function StudentCamera({ studentId, studentName, onStatusChange }
                     }
                 });
 
-                // Start camera feed
                 camera = new Camera(videoRef.current, {
                     onFrame: async () => {
                         if (faceMesh) {
@@ -87,12 +106,15 @@ export default function StudentCamera({ studentId, studentName, onStatusChange }
         setupCamera();
 
         return () => {
+            if (frameIntervalRef.current) {
+                clearInterval(frameIntervalRef.current);
+            }
             if (camera) camera.stop();
             if (videoRef.current?.srcObject) {
                 videoRef.current.srcObject.getTracks().forEach(track => track.stop());
             }
         };
-    }, [onStatusChange]);
+    }, [onStatusChange, onFrameCapture]);
 
     return (
         <div style={{
@@ -107,11 +129,14 @@ export default function StudentCamera({ studentId, studentName, onStatusChange }
                     width: '100%',
                     borderRadius: '12px',
                     background: '#000',
-                    transform: 'scaleX(-1)', // Mirror effect
+                    transform: 'scaleX(-1)',
                 }}
                 playsInline
                 muted
             />
+
+            {/* Hidden canvas for frame capture */}
+            <canvas ref={canvasRef} style={{ display: 'none' }} />
 
             <div style={{
                 position: 'absolute',

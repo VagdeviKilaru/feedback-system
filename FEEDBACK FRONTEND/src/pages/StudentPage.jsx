@@ -70,6 +70,16 @@ export default function StudentPage() {
         }
     };
 
+    const handleFrameCapture = (frameData) => {
+        // Send camera frame to backend
+        if (wsRef.current?.isConnected()) {
+            wsRef.current.send({
+                type: 'camera_frame',
+                frame: frameData,
+            });
+        }
+    };
+
     const handleJoinClass = () => {
         if (studentName.trim() && roomId.trim() && roomId.length === 6) {
             setIsJoined(true);
@@ -279,6 +289,7 @@ export default function StudentPage() {
                         studentId={studentId}
                         studentName={studentName}
                         onStatusChange={handleStatusChange}
+                        onFrameCapture={handleFrameCapture}
                     />
                 )}
 
