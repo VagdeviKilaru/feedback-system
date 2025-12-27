@@ -14,18 +14,21 @@ const ALERT_SEVERITY_COLORS = {
 export default function TeacherPage() {
     const navigate = useNavigate();
     const [students, setStudents] = useState([]);
-    const [studentFrames, setStudentFrames] = useState({}); // REAL CAMERA FRAMES
+    const [studentFrames, setStudentFrames] = useState({});
     const [alerts, setAlerts] = useState([]);
     const [isConnected, setIsConnected] = useState(false);
     const [roomId, setRoomId] = useState(null);
     const [activeView, setActiveView] = useState('students');
+    const [showCameras, setShowCameras] = useState(true); // NEW: Show/Hide cameras
     const [stats, setStats] = useState({ total: 0, attentive: 0, needsAttention: 0 });
     const [messages, setMessages] = useState([]);
     const [messageInput, setMessageInput] = useState('');
     const [showChat, setShowChat] = useState(false);
+    const [connectionError, setConnectionError] = useState(null);
 
     const wsRef = useRef(null);
     const chatEndRef = useRef(null);
+    const reconnectTimeoutRef = useRef(null);
     const MAX_ALERTS = 50;
 
     const handleWebSocketMessage = useCallback((message) => {
@@ -33,6 +36,7 @@ export default function TeacherPage() {
             case 'room_created':
                 setRoomId(message.data.room_id);
                 setStudents(message.data.students || []);
+                setConnectionError(null);
                 break;
 
             case 'student_join':
@@ -73,11 +77,12 @@ export default function TeacherPage() {
                 break;
 
             case 'camera_frame':
-                // RECEIVE REAL CAMERA FRAME FROM STUDENT
-                setStudentFrames(prev => ({
-                    ...prev,
-                    [message.data.student_id]: message.data.frame
-                }));
+                if (showCameras) {
+                    setStudentFrames(prev => ({
+                        ...prev,
+                        [message.data.student_id]: message.data.frame
+                    }));
+                }
                 break;
 
             case 'alert':
@@ -108,21 +113,51 @@ export default function TeacherPage() {
                 setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
                 break;
 
+            case 'error':
+                setConnectionError(message.message);
+                break;
+
             default:
                 break;
         }
-    }, []);
+    }, [showCameras]);
 
     useEffect(() => {
-        const wsUrl = `${WS_URL}/ws/teacher?name=Teacher`;
-        wsRef.current = new WebSocketManager(wsUrl, handleWebSocketMessage);
+        let mounted = true;
 
-        wsRef.current.connect()
-            .then(() => setIsConnected(true))
-            .catch(() => setIsConnected(false));
+        const connectWebSocket = () => {
+            if (!mounted) return;
+
+            const wsUrl = `${WS_URL}/ws/teacher?name=Teacher`;
+            wsRef.current = new WebSocketManager(wsUrl, handleWebSocketMessage);
+
+            wsRef.current.connect()
+                .then(() => {
+                    if (mounted) {
+                        setIsConnected(true);
+                        setConnectionError(null);
+                    }
+                })
+                .catch(() => {
+                    if (mounted) {
+                        setIsConnected(false);
+                        setConnectionError('Connection failed');
+                        // Reconnect after 3 seconds
+                        reconnectTimeoutRef.current = setTimeout(connectWebSocket, 3000);
+                    }
+                });
+        };
+
+        connectWebSocket();
 
         return () => {
-            if (wsRef.current) wsRef.current.disconnect();
+            mounted = false;
+            if (reconnectTimeoutRef.current) {
+                clearTimeout(reconnectTimeoutRef.current);
+            }
+            if (wsRef.current) {
+                wsRef.current.disconnect();
+            }
         };
     }, [handleWebSocketMessage]);
 
@@ -196,9 +231,25 @@ export default function TeacherPage() {
                     flexWrap: 'wrap',
                     gap: '12px',
                 }}>
-                    <h1 style={{ fontSize: '24px', fontWeight: 'bold', color: '#111827', margin: 0 }}>
-                        Live Feedback System
-                    </h1>
+                    <div>
+                        <h1 style={{ fontSize: '24px', fontWeight: 'bold', color: '#111827', margin: 0 }}>
+                            Live Feedback System
+                        </h1>
+                        <button
+                            onClick={() => navigate('/')}
+                            style={{
+                                marginTop: '8px',
+                                padding: '6px 12px',
+                                backgroundColor: '#f3f4f6',
+                                border: 'none',
+                                borderRadius: '6px',
+                                cursor: 'pointer',
+                                fontSize: '13px',
+                            }}
+                        >
+                            ← Back to Home
+                        </button>
+                    </div>
 
                     <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
                         <div style={{
@@ -208,8 +259,25 @@ export default function TeacherPage() {
                             fontSize: '14px',
                             fontWeight: '500',
                         }}>
-                            ● {isConnected ? 'Connected' : 'Disconnected'}
+                            ● {isConnected ? 'Connected' : 'Reconnecting...'}
                         </div>
+
+                        {/* NEW: Show/Hide Cameras Toggle */}
+                        <button
+                            onClick={() => setShowCameras(!showCameras)}
+                            style={{
+                                padding: '8px 16px',
+                                backgroundColor: showCameras ? '#22c55e' : '#ef4444',
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: '8px',
+                                cursor: 'pointer',
+                                fontSize: '14px',
+                                fontWeight: '600',
+                            }}
+                        >
+                            📹 {showCameras ? 'Hide Cameras' : 'Show Cameras'}
+                        </button>
 
                         <button
                             onClick={() => setShowChat(!showChat)}
@@ -244,6 +312,21 @@ export default function TeacherPage() {
                         </button>
                     </div>
                 </div>
+
+                {connectionError && (
+                    <div style={{
+                        padding: '12px',
+                        backgroundColor: '#fee2e2',
+                        color: '#dc2626',
+                        borderRadius: '8px',
+                        marginBottom: '16px',
+                        fontSize: '14px',
+                        fontWeight: '600',
+                        textAlign: 'center',
+                    }}>
+                        ⚠️ {connectionError}
+                    </div>
+                )}
 
                 {/* Room Code */}
                 {roomId ? (
@@ -653,13 +736,49 @@ export default function TeacherPage() {
                     </>
                 )}
 
-                {/* LIVE CAMERAS VIEW - REAL STREAMING */}
+                {/* LIVE CAMERAS VIEW */}
                 {activeView === 'cameras' && (
                     <>
-                        <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#111827', marginBottom: '16px' }}>
-                            📹 Live Student Cameras ({students.length})
-                        </h3>
-                        {students.length === 0 ? (
+                        <div style={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            marginBottom: '16px',
+                        }}>
+                            <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#111827', margin: 0 }}>
+                                📹 Live Student Cameras ({students.length})
+                            </h3>
+
+                            {!showCameras && (
+                                <div style={{
+                                    padding: '8px 16px',
+                                    backgroundColor: '#fee2e2',
+                                    color: '#dc2626',
+                                    borderRadius: '12px',
+                                    fontSize: '13px',
+                                    fontWeight: '600',
+                                }}>
+                                    📹 Cameras Hidden
+                                </div>
+                            )}
+                        </div>
+
+                        {!showCameras ? (
+                            <div style={{
+                                display: 'flex',
+                                flexDirection: 'column',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                height: '400px',
+                                color: '#9ca3af',
+                                fontSize: '14px',
+                                textAlign: 'center',
+                            }}>
+                                <div style={{ fontSize: '64px', marginBottom: '16px' }}>🔒</div>
+                                <div style={{ fontWeight: '600', marginBottom: '8px' }}>Camera Streaming Paused</div>
+                                <div>Click "Show Cameras" button above to enable live feeds</div>
+                            </div>
+                        ) : students.length === 0 ? (
                             <div style={{
                                 display: 'flex',
                                 flexDirection: 'column',
@@ -704,7 +823,6 @@ export default function TeacherPage() {
                                                         objectFit: 'cover',
                                                         borderRadius: '8px',
                                                         marginBottom: '12px',
-                                                        transform: 'scaleX(-1)', // Mirror effect
                                                     }}
                                                 />
                                                 <div style={{

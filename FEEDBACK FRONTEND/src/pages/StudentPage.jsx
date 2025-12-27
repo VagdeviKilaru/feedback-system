@@ -17,61 +17,90 @@ export default function StudentPage() {
     const [participants, setParticipants] = useState([]);
     const [messages, setMessages] = useState([]);
     const [messageInput, setMessageInput] = useState('');
+    const [connectionError, setConnectionError] = useState(null);
 
     const wsRef = useRef(null);
     const chatEndRef = useRef(null);
+    const reconnectTimeoutRef = useRef(null);
 
-    // WebSocket connection
+    // WebSocket connection with reconnection logic
     useEffect(() => {
         if (!isJoined || !roomId) return;
 
-        const wsUrl = `${WS_URL}/ws/student/${roomId}/${studentId}?name=${encodeURIComponent(studentName)}`;
+        let mounted = true;
 
-        wsRef.current = new WebSocketManager(wsUrl, (message) => {
-            if (message.type === 'participant_list') {
-                setParticipants(message.data.participants);
-            } else if (message.type === 'student_join') {
-                setParticipants(prev => {
-                    const exists = prev.some(p => p.id === message.data.student_id);
-                    if (exists) return prev;
-                    return [...prev, {
-                        id: message.data.student_id,
-                        name: message.data.student_name,
-                        type: 'student'
-                    }];
+        const connectWebSocket = () => {
+            if (!mounted) return;
+
+            const wsUrl = `${WS_URL}/ws/student/${roomId}/${studentId}?name=${encodeURIComponent(studentName)}`;
+
+            wsRef.current = new WebSocketManager(wsUrl, (message) => {
+                if (!mounted) return;
+
+                if (message.type === 'error') {
+                    setConnectionError(message.message);
+                    setIsConnected(false);
+                } else if (message.type === 'participant_list') {
+                    setParticipants(message.data.participants);
+                    setConnectionError(null);
+                } else if (message.type === 'student_join') {
+                    setParticipants(prev => {
+                        const exists = prev.some(p => p.id === message.data.student_id);
+                        if (exists) return prev;
+                        return [...prev, {
+                            id: message.data.student_id,
+                            name: message.data.student_name,
+                            type: 'student'
+                        }];
+                    });
+                } else if (message.type === 'student_leave') {
+                    setParticipants(prev => prev.filter(p => p.id !== message.data.student_id));
+                } else if (message.type === 'chat_message') {
+                    setMessages(prev => [...prev, message.data]);
+                    setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
+                }
+            });
+
+            wsRef.current.connect()
+                .then(() => {
+                    if (mounted) {
+                        setIsConnected(true);
+                        setConnectionError(null);
+                    }
+                })
+                .catch((err) => {
+                    if (mounted) {
+                        setIsConnected(false);
+                        setConnectionError('Failed to connect');
+                        // Try reconnecting after 3 seconds
+                        reconnectTimeoutRef.current = setTimeout(connectWebSocket, 3000);
+                    }
                 });
-            } else if (message.type === 'student_leave') {
-                setParticipants(prev => prev.filter(p => p.id !== message.data.student_id));
-            } else if (message.type === 'chat_message') {
-                setMessages(prev => [...prev, message.data]);
-                setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
-            }
-        });
+        };
 
-        wsRef.current.connect()
-            .then(() => setIsConnected(true))
-            .catch(() => setIsConnected(false));
+        connectWebSocket();
 
         return () => {
-            if (wsRef.current) wsRef.current.disconnect();
+            mounted = false;
+            if (reconnectTimeoutRef.current) {
+                clearTimeout(reconnectTimeoutRef.current);
+            }
+            if (wsRef.current) {
+                wsRef.current.disconnect();
+            }
         };
     }, [isJoined, roomId, studentId, studentName]);
 
-    const handleStatusChange = (status, confidence) => {
+    const handleStatusChange = (detectionData) => {
         if (wsRef.current?.isConnected()) {
             wsRef.current.send({
                 type: 'attention_update',
-                data: {
-                    status,
-                    confidence,
-                    timestamp: new Date().toISOString(),
-                },
+                data: detectionData,
             });
         }
     };
 
     const handleFrameCapture = (frameData) => {
-        // Send camera frame to backend
         if (wsRef.current?.isConnected()) {
             wsRef.current.send({
                 type: 'camera_frame',
@@ -127,6 +156,20 @@ export default function StudentPage() {
                         <h1 style={{ fontSize: '32px', fontWeight: 'bold', color: '#111827', margin: 0 }}>
                             Join Class
                         </h1>
+                        <button
+                            onClick={() => navigate('/')}
+                            style={{
+                                marginTop: '12px',
+                                padding: '8px 16px',
+                                backgroundColor: '#f3f4f6',
+                                border: 'none',
+                                borderRadius: '8px',
+                                cursor: 'pointer',
+                                fontSize: '14px',
+                            }}
+                        >
+                            ← Back to Home
+                        </button>
                     </div>
 
                     <input
@@ -215,7 +258,7 @@ export default function StudentPage() {
                     </p>
                 </div>
 
-                <div style={{ display: 'flex', gap: '12px' }}>
+                <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
                     <div style={{
                         padding: '8px 16px',
                         backgroundColor: isConnected ? '#dcfce7' : '#fee2e2',
@@ -223,7 +266,7 @@ export default function StudentPage() {
                         fontSize: '13px',
                         fontWeight: '600',
                     }}>
-                        {isConnected ? '● Connected' : '● Offline'}
+                        {isConnected ? '● Connected' : '● Reconnecting...'}
                     </div>
 
                     <button
@@ -243,6 +286,20 @@ export default function StudentPage() {
                     </button>
                 </div>
             </div>
+
+            {connectionError && (
+                <div style={{
+                    padding: '16px',
+                    backgroundColor: '#fee2e2',
+                    color: '#dc2626',
+                    borderRadius: '12px',
+                    marginBottom: '20px',
+                    textAlign: 'center',
+                    fontWeight: '600',
+                }}>
+                    ⚠️ {connectionError}
+                </div>
+            )}
 
             {/* Tabs */}
             <div style={{
