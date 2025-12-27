@@ -19,12 +19,11 @@ export default function TeacherPage() {
     const [isConnected, setIsConnected] = useState(false);
     const [roomId, setRoomId] = useState(null);
     const [activeView, setActiveView] = useState('students');
-    const [showCameras, setShowCameras] = useState(true); // NEW: Show/Hide cameras
+    const [showCameras, setShowCameras] = useState(true);
     const [stats, setStats] = useState({ total: 0, attentive: 0, needsAttention: 0 });
     const [messages, setMessages] = useState([]);
     const [messageInput, setMessageInput] = useState('');
     const [showChat, setShowChat] = useState(false);
-    const [connectionError, setConnectionError] = useState(null);
 
     const wsRef = useRef(null);
     const chatEndRef = useRef(null);
@@ -36,7 +35,6 @@ export default function TeacherPage() {
             case 'room_created':
                 setRoomId(message.data.room_id);
                 setStudents(message.data.students || []);
-                setConnectionError(null);
                 break;
 
             case 'student_join':
@@ -66,9 +64,17 @@ export default function TeacherPage() {
             case 'attention_update':
                 setStudents(prev => prev.map(student => {
                     if (student.id === message.data.student_id) {
+                        const newStatus = message.data.status;
+                        const oldStatus = student.status;
+
+                        // Remove alert when student becomes attentive
+                        if (newStatus === 'attentive' && oldStatus !== 'attentive') {
+                            setAlerts(prev => prev.filter(a => a.student_id !== student.id));
+                        }
+
                         return {
                             ...student,
-                            status: message.data.status,
+                            status: newStatus,
                             last_update: message.data.timestamp,
                         };
                     }
@@ -87,16 +93,19 @@ export default function TeacherPage() {
 
             case 'alert':
                 if (message.data.alert_type !== 'attentive') {
+                    // Add alert ONLY if not already exists for this student
                     setAlerts(prev => {
-                        const newAlerts = [{
+                        const exists = prev.some(a => a.student_id === message.data.student_id);
+                        if (exists) return prev;
+
+                        return [{
                             student_id: message.data.student_id,
                             student_name: message.data.student_name,
                             alert_type: message.data.alert_type,
                             message: message.data.message,
                             severity: message.data.severity,
                             timestamp: message.data.timestamp,
-                        }, ...prev];
-                        return newAlerts.slice(0, MAX_ALERTS);
+                        }, ...prev].slice(0, MAX_ALERTS);
                     });
 
                     setStudents(prev => prev.map(student => {
@@ -111,10 +120,6 @@ export default function TeacherPage() {
             case 'chat_message':
                 setMessages(prev => [...prev, message.data]);
                 setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
-                break;
-
-            case 'error':
-                setConnectionError(message.message);
                 break;
 
             default:
@@ -135,14 +140,11 @@ export default function TeacherPage() {
                 .then(() => {
                     if (mounted) {
                         setIsConnected(true);
-                        setConnectionError(null);
                     }
                 })
                 .catch(() => {
                     if (mounted) {
                         setIsConnected(false);
-                        setConnectionError('Connection failed');
-                        // Reconnect after 3 seconds
                         reconnectTimeoutRef.current = setTimeout(connectWebSocket, 3000);
                     }
                 });
@@ -262,7 +264,6 @@ export default function TeacherPage() {
                             ● {isConnected ? 'Connected' : 'Reconnecting...'}
                         </div>
 
-                        {/* NEW: Show/Hide Cameras Toggle */}
                         <button
                             onClick={() => setShowCameras(!showCameras)}
                             style={{
@@ -312,21 +313,6 @@ export default function TeacherPage() {
                         </button>
                     </div>
                 </div>
-
-                {connectionError && (
-                    <div style={{
-                        padding: '12px',
-                        backgroundColor: '#fee2e2',
-                        color: '#dc2626',
-                        borderRadius: '8px',
-                        marginBottom: '16px',
-                        fontSize: '14px',
-                        fontWeight: '600',
-                        textAlign: 'center',
-                    }}>
-                        ⚠️ {connectionError}
-                    </div>
-                )}
 
                 {/* Room Code */}
                 {roomId ? (
@@ -573,7 +559,7 @@ export default function TeacherPage() {
                 borderRadius: '12px',
                 marginBottom: '20px',
                 display: 'grid',
-                gridTemplateColumns: 'repeat(3, 1fr)',
+                gridTemplateColumns: 'repeat(4, 1fr)',
                 gap: '8px',
                 boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
             }}>
@@ -590,10 +576,27 @@ export default function TeacherPage() {
                         fontSize: '15px',
                         fontWeight: '600',
                         cursor: 'pointer',
-                        transition: 'all 0.2s ease',
                     }}
                 >
-                    👥 Students List
+                    👥 Students
+                </button>
+
+                <button
+                    onClick={() => setActiveView('participants')}
+                    style={{
+                        padding: '14px',
+                        background: activeView === 'participants'
+                            ? 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'
+                            : '#f3f4f6',
+                        color: activeView === 'participants' ? 'white' : '#6b7280',
+                        border: 'none',
+                        borderRadius: '8px',
+                        fontSize: '15px',
+                        fontWeight: '600',
+                        cursor: 'pointer',
+                    }}
+                >
+                    👨‍👩‍👧‍👦 Participants
                 </button>
 
                 <button
@@ -609,10 +612,9 @@ export default function TeacherPage() {
                         fontSize: '15px',
                         fontWeight: '600',
                         cursor: 'pointer',
-                        transition: 'all 0.2s ease',
                     }}
                 >
-                    📹 Live Cameras
+                    📹 Cameras
                 </button>
 
                 <button
@@ -628,7 +630,6 @@ export default function TeacherPage() {
                         fontSize: '15px',
                         fontWeight: '600',
                         cursor: 'pointer',
-                        transition: 'all 0.2s ease',
                     }}
                 >
                     🚨 Alerts ({alerts.length})
@@ -674,7 +675,6 @@ export default function TeacherPage() {
                                             border: `3px solid ${getStatusColor(student.status)}`,
                                             borderRadius: '12px',
                                             backgroundColor: '#fafafa',
-                                            transition: 'all 0.3s ease',
                                         }}
                                     >
                                         <div style={{
@@ -736,32 +736,121 @@ export default function TeacherPage() {
                     </>
                 )}
 
-                {/* LIVE CAMERAS VIEW */}
+                {/* PARTICIPANTS VIEW */}
+                {activeView === 'participants' && (
+                    <>
+                        <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#111827', marginBottom: '16px' }}>
+                            All Participants ({students.length + 1})
+                        </h3>
+
+                        {/* Teacher */}
+                        <div style={{
+                            padding: '16px',
+                            marginBottom: '12px',
+                            backgroundColor: '#eff6ff',
+                            borderRadius: '12px',
+                            border: '3px solid #3b82f6',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '16px',
+                        }}>
+                            <div style={{
+                                width: '56px',
+                                height: '56px',
+                                borderRadius: '50%',
+                                background: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                color: 'white',
+                                fontSize: '28px',
+                                fontWeight: 'bold',
+                            }}>
+                                T
+                            </div>
+                            <div>
+                                <div style={{ fontSize: '18px', fontWeight: '600', color: '#111827' }}>
+                                    Teacher (You) 👨‍🏫
+                                </div>
+                                <div style={{ fontSize: '13px', color: '#6b7280', marginTop: '4px' }}>
+                                    Host • Monitoring {students.length} student{students.length !== 1 ? 's' : ''}
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Students */}
+                        {students.length === 0 ? (
+                            <div style={{
+                                display: 'flex',
+                                flexDirection: 'column',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                height: '300px',
+                                color: '#9ca3af',
+                                fontSize: '14px',
+                            }}>
+                                <div style={{ fontSize: '64px', marginBottom: '16px' }}>👥</div>
+                                <div>No students connected yet</div>
+                            </div>
+                        ) : (
+                            students.map((student) => (
+                                <div
+                                    key={student.id}
+                                    style={{
+                                        padding: '16px',
+                                        marginBottom: '12px',
+                                        backgroundColor: '#fafafa',
+                                        borderRadius: '12px',
+                                        border: '2px solid #e5e7eb',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '16px',
+                                    }}
+                                >
+                                    <div style={{
+                                        width: '56px',
+                                        height: '56px',
+                                        borderRadius: '50%',
+                                        background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        color: 'white',
+                                        fontSize: '24px',
+                                        fontWeight: 'bold',
+                                    }}>
+                                        {student.name.charAt(0).toUpperCase()}
+                                    </div>
+                                    <div style={{ flex: 1 }}>
+                                        <div style={{ fontSize: '16px', fontWeight: '600', color: '#111827' }}>
+                                            {student.name} 🎓
+                                        </div>
+                                        <div style={{ fontSize: '13px', color: '#6b7280', marginTop: '4px' }}>
+                                            Student • {getStatusLabel(student.status)}
+                                        </div>
+                                    </div>
+                                    <div style={{
+                                        padding: '6px 12px',
+                                        backgroundColor: getStatusColor(student.status),
+                                        color: 'white',
+                                        borderRadius: '12px',
+                                        fontSize: '12px',
+                                        fontWeight: '600',
+                                    }}>
+                                        {getStatusIcon(student.status)}
+                                    </div>
+                                </div>
+                            ))
+                        )}
+                    </>
+                )}
+
+                {/* CAMERAS VIEW */}
                 {activeView === 'cameras' && (
                     <>
-                        <div style={{
-                            display: 'flex',
-                            justifyContent: 'space-between',
-                            alignItems: 'center',
-                            marginBottom: '16px',
-                        }}>
-                            <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#111827', margin: 0 }}>
-                                📹 Live Student Cameras ({students.length})
-                            </h3>
-
-                            {!showCameras && (
-                                <div style={{
-                                    padding: '8px 16px',
-                                    backgroundColor: '#fee2e2',
-                                    color: '#dc2626',
-                                    borderRadius: '12px',
-                                    fontSize: '13px',
-                                    fontWeight: '600',
-                                }}>
-                                    📹 Cameras Hidden
-                                </div>
-                            )}
-                        </div>
+                        <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#111827', marginBottom: '16px' }}>
+                            📹 Live Cameras ({students.length})
+                        </h3>
 
                         {!showCameras ? (
                             <div style={{
@@ -772,11 +861,10 @@ export default function TeacherPage() {
                                 height: '400px',
                                 color: '#9ca3af',
                                 fontSize: '14px',
-                                textAlign: 'center',
                             }}>
                                 <div style={{ fontSize: '64px', marginBottom: '16px' }}>🔒</div>
-                                <div style={{ fontWeight: '600', marginBottom: '8px' }}>Camera Streaming Paused</div>
-                                <div>Click "Show Cameras" button above to enable live feeds</div>
+                                <div style={{ fontWeight: '600', marginBottom: '8px' }}>Cameras Hidden</div>
+                                <div>Click "Show Cameras" button to enable</div>
                             </div>
                         ) : students.length === 0 ? (
                             <div style={{
@@ -787,11 +875,9 @@ export default function TeacherPage() {
                                 height: '400px',
                                 color: '#9ca3af',
                                 fontSize: '14px',
-                                textAlign: 'center',
                             }}>
                                 <div style={{ fontSize: '64px', marginBottom: '16px' }}>📹</div>
                                 <div style={{ fontWeight: '600' }}>No students connected</div>
-                                <div style={{ marginTop: '8px' }}>Waiting for students to join...</div>
                             </div>
                         ) : (
                             <div style={{
@@ -807,16 +893,13 @@ export default function TeacherPage() {
                                             borderRadius: '12px',
                                             backgroundColor: '#fafafa',
                                             padding: '12px',
-                                            transition: 'all 0.3s ease',
-                                            boxShadow: `0 4px 12px ${getStatusColor(student.status)}33`,
                                         }}
                                     >
-                                        {/* REAL LIVE CAMERA FEED */}
                                         {studentFrames[student.id] ? (
                                             <div style={{ position: 'relative' }}>
                                                 <img
                                                     src={studentFrames[student.id]}
-                                                    alt={`${student.name}'s camera`}
+                                                    alt={student.name}
                                                     style={{
                                                         width: '100%',
                                                         height: '240px',
@@ -835,36 +918,25 @@ export default function TeacherPage() {
                                                     borderRadius: '12px',
                                                     fontSize: '11px',
                                                     fontWeight: '600',
-                                                    display: 'flex',
-                                                    alignItems: 'center',
-                                                    gap: '4px',
                                                 }}>
-                                                    <div style={{
-                                                        width: '6px',
-                                                        height: '6px',
-                                                        backgroundColor: 'white',
-                                                        borderRadius: '50%',
-                                                        animation: 'pulse 2s ease-in-out infinite',
-                                                    }} />
-                                                    LIVE
+                                                    ● LIVE
                                                 </div>
                                             </div>
                                         ) : (
                                             <div style={{
                                                 width: '100%',
                                                 height: '240px',
-                                                backgroundColor: '#1f2937',
+                                                background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
                                                 borderRadius: '8px',
                                                 marginBottom: '12px',
                                                 display: 'flex',
                                                 alignItems: 'center',
                                                 justifyContent: 'center',
-                                                background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
                                                 color: 'white',
                                             }}>
                                                 <div style={{ textAlign: 'center' }}>
                                                     <div style={{ fontSize: '48px', marginBottom: '8px' }}>📹</div>
-                                                    <div style={{ fontSize: '14px' }}>Connecting camera...</div>
+                                                    <div style={{ fontSize: '14px' }}>Waiting for camera...</div>
                                                 </div>
                                             </div>
                                         )}
@@ -890,18 +962,9 @@ export default function TeacherPage() {
                                             borderRadius: '12px',
                                             fontSize: '13px',
                                             fontWeight: '600',
-                                            marginBottom: '8px',
                                         }}>
                                             <span>{getStatusIcon(student.status)}</span>
                                             <span>{getStatusLabel(student.status)}</span>
-                                        </div>
-
-                                        <div style={{
-                                            fontSize: '11px',
-                                            color: '#6b7280',
-                                            textAlign: 'center',
-                                        }}>
-                                            Last Update: {formatTimeAgoIST(student.last_update)}
                                         </div>
                                     </div>
                                 ))}
@@ -923,16 +986,21 @@ export default function TeacherPage() {
                                 Real-Time Alerts
                             </h3>
                             {alerts.length > 0 && (
-                                <span style={{
-                                    backgroundColor: '#fee2e2',
-                                    color: '#dc2626',
-                                    padding: '4px 12px',
-                                    borderRadius: '12px',
-                                    fontSize: '12px',
-                                    fontWeight: '600',
-                                }}>
-                                    {alerts.length} Active
-                                </span>
+                                <button
+                                    onClick={clearAlerts}
+                                    style={{
+                                        padding: '8px 16px',
+                                        backgroundColor: '#ef4444',
+                                        color: 'white',
+                                        border: 'none',
+                                        borderRadius: '8px',
+                                        cursor: 'pointer',
+                                        fontSize: '13px',
+                                        fontWeight: '600',
+                                    }}
+                                >
+                                    Clear All
+                                </button>
                             )}
                         </div>
 
@@ -947,77 +1015,53 @@ export default function TeacherPage() {
                                 fontSize: '14px',
                             }}>
                                 <div style={{ fontSize: '48px', marginBottom: '12px' }}>✓</div>
-                                <div style={{ fontWeight: '600' }}>All students attentive</div>
+                                <div style={{ fontWeight: '600' }}>No active alerts</div>
+                                <div style={{ marginTop: '8px' }}>All students are attentive</div>
                             </div>
                         ) : (
-                            <>
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '16px' }}>
-                                    {alerts.map((alert, i) => (
-                                        <div
-                                            key={`${alert.student_id}-${alert.timestamp}-${i}`}
-                                            style={{
-                                                padding: '16px',
-                                                border: `2px solid ${ALERT_SEVERITY_COLORS[alert.severity]}`,
-                                                borderLeft: `6px solid ${ALERT_SEVERITY_COLORS[alert.severity]}`,
-                                                borderRadius: '8px',
-                                                backgroundColor: '#fafafa',
-                                            }}
-                                        >
-                                            <div style={{
-                                                display: 'flex',
-                                                justifyContent: 'space-between',
-                                                alignItems: 'flex-start',
-                                                marginBottom: '8px',
-                                            }}>
-                                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                                    <span style={{ fontSize: '20px' }}>{getSeverityIcon(alert.severity)}</span>
-                                                    <div>
-                                                        <div style={{ fontWeight: '600', fontSize: '15px', color: '#111827' }}>
-                                                            {alert.student_name}
-                                                        </div>
-                                                        <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '2px' }}>
-                                                            {alert.alert_type.replace('_', ' ')}
-                                                        </div>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                                {alerts.map((alert, i) => (
+                                    <div
+                                        key={`${alert.student_id}-${i}`}
+                                        style={{
+                                            padding: '16px',
+                                            border: `2px solid ${ALERT_SEVERITY_COLORS[alert.severity]}`,
+                                            borderLeft: `6px solid ${ALERT_SEVERITY_COLORS[alert.severity]}`,
+                                            borderRadius: '8px',
+                                            backgroundColor: '#fafafa',
+                                        }}
+                                    >
+                                        <div style={{
+                                            display: 'flex',
+                                            justifyContent: 'space-between',
+                                            alignItems: 'flex-start',
+                                            marginBottom: '8px',
+                                        }}>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                <span style={{ fontSize: '20px' }}>{getSeverityIcon(alert.severity)}</span>
+                                                <div>
+                                                    <div style={{ fontWeight: '600', fontSize: '15px', color: '#111827' }}>
+                                                        {alert.student_name}
+                                                    </div>
+                                                    <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '2px' }}>
+                                                        {alert.alert_type.replace('_', ' ')}
                                                     </div>
                                                 </div>
-                                                <div style={{ fontSize: '11px', color: '#9ca3af', whiteSpace: 'nowrap' }}>
-                                                    {formatTimeAgoIST(alert.timestamp)}
-                                                </div>
                                             </div>
-                                            <div style={{ fontSize: '14px', color: '#4b5563', lineHeight: '1.5' }}>
-                                                {alert.message}
+                                            <div style={{ fontSize: '11px', color: '#9ca3af', whiteSpace: 'nowrap' }}>
+                                                {formatTimeAgoIST(alert.timestamp)}
                                             </div>
                                         </div>
-                                    ))}
-                                </div>
-                                <button
-                                    onClick={clearAlerts}
-                                    style={{
-                                        width: '100%',
-                                        padding: '12px',
-                                        backgroundColor: '#ef4444',
-                                        color: 'white',
-                                        border: 'none',
-                                        borderRadius: '8px',
-                                        cursor: 'pointer',
-                                        fontSize: '14px',
-                                        fontWeight: '500',
-                                    }}
-                                >
-                                    Clear All Alerts
-                                </button>
-                            </>
+                                        <div style={{ fontSize: '14px', color: '#4b5563', lineHeight: '1.5' }}>
+                                            {alert.message}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
                         )}
                     </>
                 )}
             </div>
-
-            <style>{`
-        @keyframes pulse {
-          0%, 100% { opacity: 1; }
-          50% { opacity: 0.5; }
-        }
-      `}</style>
         </div>
     );
 }
