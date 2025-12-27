@@ -19,11 +19,11 @@ const VideoCapture = forwardRef(({ onVideoReady, isActive, showMirror = true }, 
         });
 
         streamRef.current = stream;
-        
+
         if (localVideoRef.current) {
           localVideoRef.current.srcObject = stream;
         }
-        
+
         if (ref) {
           if (typeof ref === 'function') {
             ref(localVideoRef.current);
