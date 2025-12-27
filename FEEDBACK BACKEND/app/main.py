@@ -8,7 +8,14 @@ from datetime import datetime
 
 from app.websocket_manager import manager
 from app.ai_processor import analyzer
+import pytz
 
+# IST Timezone
+IST = pytz.timezone('Asia/Kolkata')
+
+def get_ist_timestamp():
+    """Get current timestamp in IST"""
+    return datetime.now(IST).isoformat()
 # Initialize FastAPI app
 app = FastAPI(
     title="Live Feedback System",
