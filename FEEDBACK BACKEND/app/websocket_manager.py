@@ -38,7 +38,15 @@ class ConnectionManager:
             self.teacher_rooms[websocket] = room_id
         
         return room_id
-
+    async def remove_alert(self, room_id: str, student_id: str):
+        """Remove alert for a specific student"""
+        await self.broadcast_to_room_teachers(room_id, {
+            "type": "alert_resolved",
+            "data": {
+                "student_id": student_id,
+                "timestamp": datetime.now().isoformat()
+            }
+        })
     async def connect_student(self, websocket: WebSocket, room_id: str, student_id: str, student_name: str):
         """Connect a student to a room"""
         await websocket.accept()

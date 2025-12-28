@@ -121,7 +121,10 @@ export default function TeacherPage() {
                 setMessages(prev => [...prev, message.data]);
                 setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
                 break;
-
+            case 'alert_resolved':
+                // Remove alert when student becomes attentive
+                setAlerts(prev => prev.filter(a => a.student_id !== message.data.student_id));
+                break;
             default:
                 break;
         }
