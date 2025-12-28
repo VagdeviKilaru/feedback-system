@@ -180,5 +180,4 @@ for i, ax in enumerate([ax1, ax2, ax3, ax4, ax5, ax6], 1):
     fig.savefig(f'graph_{i}.png', dpi=300, bbox_inches=extent.expanded(1.2, 1.2))
 
 print("✅ Individual graphs saved as 'graph_1.png' through 'graph_6.png'")
-
 plt.show()
