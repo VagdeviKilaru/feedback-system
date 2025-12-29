@@ -92,14 +92,17 @@ export default function StudentPage() {
     }, [isJoined, roomId, studentId, studentName]);
 
     const handleStatusChange = (detectionData) => {
+        console.log('📊 Detection:', detectionData);
         if (wsRef.current?.isConnected()) {
             wsRef.current.send({
                 type: 'attention_update',
                 data: detectionData,
             });
+            console.log('✅ Sent to server');
+        } else {
+            console.log('❌ WebSocket not connected');
         }
     };
-
     const handleFrameCapture = (frameData) => {
         if (wsRef.current?.isConnected()) {
             wsRef.current.send({

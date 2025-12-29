@@ -253,7 +253,45 @@ class ConnectionManager:
                 "timestamp": datetime.now().isoformat()
             }
         })
-
+    async def disconnect_teacher(self, websocket: WebSocket):
+        """Disconnect teacher - ONLY close room when LAST teacher leaves"""
+        async with self.lock:
+            room_id = self.teacher_rooms.get(websocket)
+            
+            if room_id and room_id in self.rooms_teachers:
+                if websocket in self.rooms_teachers[room_id]:
+                    self.rooms_teachers[room_id].remove(websocket)
+                    print(f"👨‍🏫 Teacher left room {room_id}")
+                
+                # ONLY close room if NO teachers left
+                if len(self.rooms_teachers[room_id]) == 0:
+                    print(f"🚪 CLOSING ROOM {room_id} - Last teacher left")
+                    
+                    # Notify all students
+                    for student_ws in list(self.rooms_students.get(room_id, {}).values()):
+                        try:
+                            await student_ws.send_json({
+                                "type": "room_closed",
+                                "message": "Teacher ended the class"
+                            })
+                            await student_ws.close(code=4003, reason="Room closed")
+                        except:
+                            pass
+                    
+                    # Clean up
+                    if room_id in self.rooms_teachers:
+                        del self.rooms_teachers[room_id]
+                    if room_id in self.rooms_students:
+                        del self.rooms_students[room_id]
+                    if room_id in self.rooms_students_info:
+                        del self.rooms_students_info[room_id]
+                else:
+                    print(f"👨‍🏫 Room {room_id} still has {len(self.rooms_teachers[room_id])} teacher(s)")
+            
+            if websocket in self.teacher_rooms:
+                del self.teacher_rooms[websocket]
+            if websocket in self.teacher_names:
+                del self.teacher_names[websocket]
     async def broadcast_camera_frame(self, room_id: str, student_id: str, frame_data: str):
         """Broadcast camera frame from student to teachers"""
         if room_id not in self.rooms_teachers:
