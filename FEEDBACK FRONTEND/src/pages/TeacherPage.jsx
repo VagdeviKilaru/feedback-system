@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { WebSocketManager } from '../utils/websocket';
 import { getStatusColor, getStatusLabel, formatTimeAgoIST, formatTimeIST } from '../utils/detection';
+import TeacherCamera from '../components/TeacherCamera';
 
 const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:8000';
 
@@ -18,8 +19,9 @@ export default function TeacherPage() {
     const [alerts, setAlerts] = useState([]);
     const [isConnected, setIsConnected] = useState(false);
     const [roomId, setRoomId] = useState(null);
-    const [activeView, setActiveView] = useState('students');
+    const [activeView, setActiveView] = useState('alerts');
     const [showCameras, setShowCameras] = useState(true);
+    const [showMyCamera, setShowMyCamera] = useState(false);
     const [stats, setStats] = useState({ total: 0, attentive: 0, needsAttention: 0 });
     const [messages, setMessages] = useState([]);
     const [messageInput, setMessageInput] = useState('');
@@ -31,13 +33,17 @@ export default function TeacherPage() {
     const MAX_ALERTS = 50;
 
     const handleWebSocketMessage = useCallback((message) => {
+        console.log('📨 Teacher received:', message.type);
+
         switch (message.type) {
             case 'room_created':
+                console.log('🏠 Room created:', message.data.room_id);
                 setRoomId(message.data.room_id);
                 setStudents(message.data.students || []);
                 break;
 
             case 'student_join':
+                console.log('👋 Student joined:', message.data.student_name);
                 setStudents(prev => {
                     const exists = prev.some(s => s.id === message.data.student_id);
                     if (exists) return prev;
@@ -52,6 +58,7 @@ export default function TeacherPage() {
                 break;
 
             case 'student_leave':
+                console.log('👋 Student left:', message.data.student_name);
                 setStudents(prev => prev.filter(s => s.id !== message.data.student_id));
                 setAlerts(prev => prev.filter(a => a.student_id !== message.data.student_id));
                 setStudentFrames(prev => {
@@ -62,19 +69,12 @@ export default function TeacherPage() {
                 break;
 
             case 'attention_update':
+                console.log('📊 Attention update:', message.data.student_name, message.data.status);
                 setStudents(prev => prev.map(student => {
                     if (student.id === message.data.student_id) {
-                        const newStatus = message.data.status;
-                        const oldStatus = student.status;
-
-                        // Remove alert when student becomes attentive
-                        if (newStatus === 'attentive' && oldStatus !== 'attentive') {
-                            setAlerts(prev => prev.filter(a => a.student_id !== student.id));
-                        }
-
                         return {
                             ...student,
-                            status: newStatus,
+                            status: message.data.status,
                             last_update: message.data.timestamp,
                         };
                     }
@@ -92,39 +92,46 @@ export default function TeacherPage() {
                 break;
 
             case 'alert':
-                if (message.data.alert_type !== 'attentive') {
-                    // Add alert ONLY if not already exists for this student
-                    setAlerts(prev => {
-                        const exists = prev.some(a => a.student_id === message.data.student_id);
-                        if (exists) return prev;
+                console.log('🚨 ALERT RECEIVED:', message.data.message);
+                setAlerts(prev => {
+                    // Check if alert already exists for this student
+                    const exists = prev.some(a => a.student_id === message.data.student_id);
+                    if (exists) {
+                        console.log('⚠️ Alert already exists, not adding duplicate');
+                        return prev;
+                    }
 
-                        return [{
-                            student_id: message.data.student_id,
-                            student_name: message.data.student_name,
-                            alert_type: message.data.alert_type,
-                            message: message.data.message,
-                            severity: message.data.severity,
-                            timestamp: message.data.timestamp,
-                        }, ...prev].slice(0, MAX_ALERTS);
-                    });
+                    const newAlert = {
+                        student_id: message.data.student_id,
+                        student_name: message.data.student_name,
+                        alert_type: message.data.alert_type,
+                        message: message.data.message,
+                        severity: message.data.severity,
+                        timestamp: message.data.timestamp,
+                    };
 
-                    setStudents(prev => prev.map(student => {
-                        if (student.id === message.data.student_id) {
-                            return { ...student, alerts_count: student.alerts_count + 1 };
-                        }
-                        return student;
-                    }));
-                }
+                    console.log('✅ Adding new alert:', newAlert);
+                    return [newAlert, ...prev].slice(0, MAX_ALERTS);
+                });
+
+                setStudents(prev => prev.map(student => {
+                    if (student.id === message.data.student_id) {
+                        return { ...student, alerts_count: student.alerts_count + 1 };
+                    }
+                    return student;
+                }));
+                break;
+
+            case 'clear_alert':
+                console.log('✅ Clearing alert for:', message.data.student_id);
+                setAlerts(prev => prev.filter(a => a.student_id !== message.data.student_id));
                 break;
 
             case 'chat_message':
                 setMessages(prev => [...prev, message.data]);
                 setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
                 break;
-            case 'alert_resolved':
-                // Remove alert when student becomes attentive
-                setAlerts(prev => prev.filter(a => a.student_id !== message.data.student_id));
-                break;
+
             default:
                 break;
         }
@@ -136,16 +143,19 @@ export default function TeacherPage() {
         const connectWebSocket = () => {
             if (!mounted) return;
 
+            console.log('🔌 Connecting teacher WebSocket...');
             const wsUrl = `${WS_URL}/ws/teacher?name=Teacher`;
             wsRef.current = new WebSocketManager(wsUrl, handleWebSocketMessage);
 
             wsRef.current.connect()
                 .then(() => {
                     if (mounted) {
+                        console.log('✅ Teacher connected');
                         setIsConnected(true);
                     }
                 })
-                .catch(() => {
+                .catch((err) => {
+                    console.error('❌ Connection failed:', err);
                     if (mounted) {
                         setIsConnected(false);
                         reconnectTimeoutRef.current = setTimeout(connectWebSocket, 3000);
@@ -204,7 +214,6 @@ export default function TeacherPage() {
             attentive: '✓',
             looking_away: '👀',
             drowsy: '😴',
-            no_face: '❌',
         };
         return icons[status] || '○';
     };
@@ -268,10 +277,10 @@ export default function TeacherPage() {
                         </div>
 
                         <button
-                            onClick={() => setShowCameras(!showCameras)}
+                            onClick={() => setShowMyCamera(true)}
                             style={{
                                 padding: '8px 16px',
-                                backgroundColor: showCameras ? '#22c55e' : '#ef4444',
+                                backgroundColor: '#8b5cf6',
                                 color: 'white',
                                 border: 'none',
                                 borderRadius: '8px',
@@ -280,7 +289,23 @@ export default function TeacherPage() {
                                 fontWeight: '600',
                             }}
                         >
-                            📹 {showCameras ? 'Hide Cameras' : 'Show Cameras'}
+                            📹 Show My Camera
+                        </button>
+
+                        <button
+                            onClick={() => setShowCameras(!showCameras)}
+                            style={{
+                                padding: '8px 16px',
+                                backgroundColor: showCameras ? '#22c55e' : '#6b7280',
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: '8px',
+                                cursor: 'pointer',
+                                fontSize: '14px',
+                                fontWeight: '600',
+                            }}
+                        >
+                            👁️ {showCameras ? 'Hide' : 'Show'} Student Cameras
                         </button>
 
                         <button
@@ -647,7 +672,7 @@ export default function TeacherPage() {
                 boxShadow: '0 10px 30px rgba(0, 0, 0, 0.2)',
                 minHeight: '500px',
             }}>
-                {/* STUDENTS LIST VIEW */}
+                {/* STUDENTS LIST */}
                 {activeView === 'students' && (
                     <>
                         <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#111827', marginBottom: '16px' }}>
@@ -739,7 +764,7 @@ export default function TeacherPage() {
                     </>
                 )}
 
-                {/* PARTICIPANTS VIEW */}
+                {/* PARTICIPANTS */}
                 {activeView === 'participants' && (
                     <>
                         <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#111827', marginBottom: '16px' }}>
@@ -848,7 +873,7 @@ export default function TeacherPage() {
                     </>
                 )}
 
-                {/* CAMERAS VIEW */}
+                {/* CAMERAS */}
                 {activeView === 'cameras' && (
                     <>
                         <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#111827', marginBottom: '16px' }}>
@@ -867,7 +892,7 @@ export default function TeacherPage() {
                             }}>
                                 <div style={{ fontSize: '64px', marginBottom: '16px' }}>🔒</div>
                                 <div style={{ fontWeight: '600', marginBottom: '8px' }}>Cameras Hidden</div>
-                                <div>Click "Show Cameras" button to enable</div>
+                                <div>Click "Show Student Cameras" button to enable</div>
                             </div>
                         ) : students.length === 0 ? (
                             <div style={{
@@ -976,7 +1001,7 @@ export default function TeacherPage() {
                     </>
                 )}
 
-                {/* ALERTS VIEW */}
+                {/* ALERTS */}
                 {activeView === 'alerts' && (
                     <>
                         <div style={{
@@ -1065,6 +1090,9 @@ export default function TeacherPage() {
                     </>
                 )}
             </div>
+
+            {/* Teacher Camera Modal */}
+            {showMyCamera && <TeacherCamera onClose={() => setShowMyCamera(false)} />}
         </div>
     );
 }
