@@ -236,6 +236,19 @@ async def teacher_websocket(
                         "timestamp": get_ist_timestamp()
                     }
                 }
+                elif msg_type == "teacher_camera_frame":
+                # Teacher sends their camera frame
+                frame_data = data.get("frame")
+                if frame_data:
+                    print(f"📹 Broadcasting teacher camera to students in room {created_room_id}")
+                    # Broadcast to all students
+                    await manager.broadcast_to_room_students(created_room_id, {
+                        "type": "teacher_frame",
+                        "data": {
+                            "frame": frame_data,
+                            "timestamp": get_ist_timestamp()
+                        }
+                    })
                 # Broadcast to all teachers and students in room
                 await manager.broadcast_to_room_teachers(created_room_id, chat_data)
                 await manager.broadcast_to_room_students(created_room_id, chat_data)

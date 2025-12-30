@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 
-export default function TeacherCamera({ onClose }) {
+export default function TeacherCamera({ onClose, wsManager }) {
     const videoRef = useRef(null);
+    const canvasRef = useRef(null);
     const [isActive, setIsActive] = useState(false);
     const streamRef = useRef(null);
+    const frameIntervalRef = useRef(null);
 
     useEffect(() => {
         async function startCamera() {
@@ -26,6 +28,33 @@ export default function TeacherCamera({ onClose }) {
                     await videoRef.current.play();
                     setIsActive(true);
                     console.log('✅ Teacher camera active');
+
+                    // Setup canvas
+                    const canvas = canvasRef.current;
+                    canvas.width = 640;
+                    canvas.height = 480;
+
+                    // Send frames to students every 1 second
+                    frameIntervalRef.current = setInterval(() => {
+                        if (!videoRef.current || videoRef.current.paused) return;
+
+                        try {
+                            const ctx = canvas.getContext('2d');
+                            ctx.drawImage(videoRef.current, 0, 0, 640, 480);
+                            const frameData = canvas.toDataURL('image/jpeg', 0.7);
+
+                            // Send to students via WebSocket
+                            if (wsManager && wsManager.isConnected()) {
+                                wsManager.send({
+                                    type: 'teacher_camera_frame',
+                                    frame: frameData
+                                });
+                                console.log('📤 Teacher frame sent to students');
+                            }
+                        } catch (err) {
+                            console.error('Frame capture error:', err);
+                        }
+                    }, 1000);
                 }
             } catch (err) {
                 console.error('❌ Teacher camera error:', err);
@@ -37,15 +66,17 @@ export default function TeacherCamera({ onClose }) {
 
         return () => {
             console.log('🛑 Stopping teacher camera');
+            if (frameIntervalRef.current) {
+                clearInterval(frameIntervalRef.current);
+            }
             if (streamRef.current) {
                 streamRef.current.getTracks().forEach(track => track.stop());
             }
         };
-    }, []);
+    }, [wsManager]);
 
     return (
         <>
-            {/* Background overlay */}
             <div
                 style={{
                     position: 'fixed',
@@ -60,7 +91,6 @@ export default function TeacherCamera({ onClose }) {
                 onClick={onClose}
             />
 
-            {/* Camera modal */}
             <div style={{
                 position: 'fixed',
                 top: '50%',
@@ -74,7 +104,6 @@ export default function TeacherCamera({ onClose }) {
                 maxWidth: '90vw',
                 maxHeight: '90vh'
             }}>
-                {/* Header */}
                 <div style={{
                     display: 'flex',
                     justifyContent: 'space-between',
@@ -88,14 +117,14 @@ export default function TeacherCamera({ onClose }) {
                             fontWeight: '700',
                             color: '#111827'
                         }}>
-                            📹 My Camera Preview
+                            📹 My Camera (Broadcasting to Students)
                         </h3>
                         <p style={{
                             margin: '4px 0 0 0',
                             fontSize: '13px',
                             color: '#6b7280'
                         }}>
-                            This is how you appear to students
+                            Students can see you in their main view
                         </p>
                     </div>
 
@@ -110,7 +139,7 @@ export default function TeacherCamera({ onClose }) {
                             cursor: 'pointer',
                             fontSize: '15px',
                             fontWeight: '600',
-                            transition: 'all 0.2s'
+                            transition: 'background-color 0.2s',
                         }}
                         onMouseEnter={(e) => e.target.style.backgroundColor = '#dc2626'}
                         onMouseLeave={(e) => e.target.style.backgroundColor = '#ef4444'}
@@ -119,7 +148,6 @@ export default function TeacherCamera({ onClose }) {
                     </button>
                 </div>
 
-                {/* Video */}
                 <div style={{ position: 'relative' }}>
                     <video
                         ref={videoRef}
@@ -136,6 +164,8 @@ export default function TeacherCamera({ onClose }) {
                             border: '3px solid #8b5cf6'
                         }}
                     />
+
+                    <canvas ref={canvasRef} style={{ display: 'none' }} />
 
                     {isActive && (
                         <div style={{
@@ -160,7 +190,7 @@ export default function TeacherCamera({ onClose }) {
                                 borderRadius: '50%',
                                 animation: 'pulse 2s ease-in-out infinite'
                             }} />
-                            LIVE
+                            LIVE - Broadcasting
                         </div>
                     )}
 
@@ -184,17 +214,17 @@ export default function TeacherCamera({ onClose }) {
                     )}
                 </div>
 
-                {/* Info */}
                 <div style={{
                     marginTop: '16px',
                     padding: '12px',
-                    backgroundColor: '#f3f4f6',
+                    backgroundColor: '#dcfce7',
                     borderRadius: '8px',
                     fontSize: '13px',
-                    color: '#6b7280',
-                    textAlign: 'center'
+                    color: '#166534',
+                    textAlign: 'center',
+                    fontWeight: '600',
                 }}>
-                    💡 Tip: Make sure you have good lighting and are centered in the frame
+                    ✓ Students can see your camera in their main view
                 </div>
             </div>
 

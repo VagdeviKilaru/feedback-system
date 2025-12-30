@@ -20,7 +20,6 @@ export default function TeacherPage() {
     const [isConnected, setIsConnected] = useState(false);
     const [roomId, setRoomId] = useState(null);
     const [activeView, setActiveView] = useState('alerts');
-    const [showCameras, setShowCameras] = useState(true);
     const [showMyCamera, setShowMyCamera] = useState(false);
     const [stats, setStats] = useState({ total: 0, attentive: 0, needsAttention: 0 });
     const [messages, setMessages] = useState([]);
@@ -69,7 +68,7 @@ export default function TeacherPage() {
                 break;
 
             case 'attention_update':
-                console.log('📊 Attention update:', message.data.student_name, message.data.status);
+                console.log('📊 Attention update:', message.data.student_name, '→', message.data.status);
                 setStudents(prev => prev.map(student => {
                     if (student.id === message.data.student_id) {
                         return {
@@ -83,25 +82,23 @@ export default function TeacherPage() {
                 break;
 
             case 'camera_frame':
-                if (showCameras) {
-                    setStudentFrames(prev => ({
-                        ...prev,
-                        [message.data.student_id]: message.data.frame
-                    }));
-                }
+                setStudentFrames(prev => ({
+                    ...prev,
+                    [message.data.student_id]: message.data.frame
+                }));
                 break;
 
             case 'alert':
                 console.log('🚨 ALERT RECEIVED:', message.data.message);
                 setAlerts(prev => {
-                    // Check if alert already exists for this student
                     const exists = prev.some(a => a.student_id === message.data.student_id);
                     if (exists) {
-                        console.log('⚠️ Alert already exists, not adding duplicate');
+                        console.log('⚠️ Alert already exists for this student');
                         return prev;
                     }
 
                     const newAlert = {
+                        id: `${message.data.student_id}-${Date.now()}`,
                         student_id: message.data.student_id,
                         student_name: message.data.student_name,
                         alert_type: message.data.alert_type,
@@ -110,13 +107,13 @@ export default function TeacherPage() {
                         timestamp: message.data.timestamp,
                     };
 
-                    console.log('✅ Adding new alert:', newAlert);
+                    console.log('✅ Adding new alert to dashboard');
                     return [newAlert, ...prev].slice(0, MAX_ALERTS);
                 });
 
                 setStudents(prev => prev.map(student => {
                     if (student.id === message.data.student_id) {
-                        return { ...student, alerts_count: student.alerts_count + 1 };
+                        return { ...student, alerts_count: (student.alerts_count || 0) + 1 };
                     }
                     return student;
                 }));
@@ -135,7 +132,7 @@ export default function TeacherPage() {
             default:
                 break;
         }
-    }, [showCameras]);
+    }, []);
 
     useEffect(() => {
         let mounted = true;
@@ -183,12 +180,15 @@ export default function TeacherPage() {
         setStats({ total, attentive, needsAttention });
     }, [students]);
 
-    const clearAlerts = () => setAlerts([]);
+    const clearAlerts = () => {
+        console.log('🧹 Clearing all alerts');
+        setAlerts([]);
+    };
 
     const copyRoomCode = () => {
         if (roomId) {
             navigator.clipboard.writeText(roomId);
-            alert(`Room code ${roomId} copied!`);
+            alert(`Room code ${roomId} copied to clipboard!`);
         }
     };
 
@@ -203,7 +203,7 @@ export default function TeacherPage() {
     };
 
     const handleLeaveClass = () => {
-        if (confirm('End class for all students?')) {
+        if (confirm('Are you sure you want to end the class for all students?')) {
             if (wsRef.current) wsRef.current.disconnect();
             navigate('/');
         }
@@ -290,22 +290,6 @@ export default function TeacherPage() {
                             }}
                         >
                             📹 Show My Camera
-                        </button>
-
-                        <button
-                            onClick={() => setShowCameras(!showCameras)}
-                            style={{
-                                padding: '8px 16px',
-                                backgroundColor: showCameras ? '#22c55e' : '#6b7280',
-                                color: 'white',
-                                border: 'none',
-                                borderRadius: '8px',
-                                cursor: 'pointer',
-                                fontSize: '14px',
-                                fontWeight: '600',
-                            }}
-                        >
-                            👁️ {showCameras ? 'Hide' : 'Show'} Student Cameras
                         </button>
 
                         <button
@@ -580,35 +564,17 @@ export default function TeacherPage() {
                 </div>
             )}
 
-            {/* Navigation Tabs */}
+            {/* Navigation Tabs - 3 TABS ONLY */}
             <div style={{
                 backgroundColor: 'white',
                 padding: '8px',
                 borderRadius: '12px',
                 marginBottom: '20px',
                 display: 'grid',
-                gridTemplateColumns: 'repeat(4, 1fr)',
+                gridTemplateColumns: 'repeat(3, 1fr)',
                 gap: '8px',
                 boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
             }}>
-                <button
-                    onClick={() => setActiveView('students')}
-                    style={{
-                        padding: '14px',
-                        background: activeView === 'students'
-                            ? 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'
-                            : '#f3f4f6',
-                        color: activeView === 'students' ? 'white' : '#6b7280',
-                        border: 'none',
-                        borderRadius: '8px',
-                        fontSize: '15px',
-                        fontWeight: '600',
-                        cursor: 'pointer',
-                    }}
-                >
-                    👥 Students
-                </button>
-
                 <button
                     onClick={() => setActiveView('participants')}
                     style={{
@@ -672,98 +638,6 @@ export default function TeacherPage() {
                 boxShadow: '0 10px 30px rgba(0, 0, 0, 0.2)',
                 minHeight: '500px',
             }}>
-                {/* STUDENTS LIST */}
-                {activeView === 'students' && (
-                    <>
-                        <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#111827', marginBottom: '16px' }}>
-                            Students ({students.length})
-                        </h3>
-                        {students.length === 0 ? (
-                            <div style={{
-                                display: 'flex',
-                                flexDirection: 'column',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                height: '400px',
-                                color: '#9ca3af',
-                                fontSize: '14px',
-                                textAlign: 'center',
-                            }}>
-                                <div style={{ fontSize: '64px', marginBottom: '16px' }}>👥</div>
-                                <div style={{ fontWeight: '600', marginBottom: '8px' }}>No students connected</div>
-                                <div>Share code <strong style={{ fontFamily: 'monospace' }}>{roomId || '...'}</strong></div>
-                            </div>
-                        ) : (
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                                {students.map((student) => (
-                                    <div
-                                        key={student.id}
-                                        style={{
-                                            padding: '16px',
-                                            border: `3px solid ${getStatusColor(student.status)}`,
-                                            borderRadius: '12px',
-                                            backgroundColor: '#fafafa',
-                                        }}
-                                    >
-                                        <div style={{
-                                            display: 'flex',
-                                            justifyContent: 'space-between',
-                                            alignItems: 'flex-start',
-                                            marginBottom: '8px',
-                                        }}>
-                                            <div>
-                                                <div style={{ fontWeight: '600', fontSize: '16px', color: '#111827', marginBottom: '4px' }}>
-                                                    {student.name}
-                                                </div>
-                                                <div style={{ fontSize: '12px', color: '#6b7280' }}>
-                                                    ID: {student.id.substring(0, 8)}...
-                                                </div>
-                                            </div>
-
-                                            <div style={{
-                                                display: 'flex',
-                                                alignItems: 'center',
-                                                gap: '6px',
-                                                padding: '8px 16px',
-                                                backgroundColor: getStatusColor(student.status),
-                                                color: 'white',
-                                                borderRadius: '20px',
-                                                fontSize: '14px',
-                                                fontWeight: '600',
-                                                boxShadow: `0 2px 8px ${getStatusColor(student.status)}66`,
-                                            }}>
-                                                <span>{getStatusIcon(student.status)}</span>
-                                                <span>{getStatusLabel(student.status)}</span>
-                                            </div>
-                                        </div>
-
-                                        <div style={{
-                                            display: 'flex',
-                                            justifyContent: 'space-between',
-                                            fontSize: '12px',
-                                            color: '#6b7280',
-                                        }}>
-                                            <span>Updated: {formatTimeAgoIST(student.last_update)}</span>
-                                            {student.alerts_count > 0 && (
-                                                <span style={{
-                                                    backgroundColor: '#fee2e2',
-                                                    color: '#dc2626',
-                                                    padding: '4px 12px',
-                                                    borderRadius: '12px',
-                                                    fontWeight: '600',
-                                                    fontSize: '11px',
-                                                }}>
-                                                    {student.alerts_count} Alert{student.alerts_count !== 1 ? 's' : ''}
-                                                </span>
-                                            )}
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        )}
-                    </>
-                )}
-
                 {/* PARTICIPANTS */}
                 {activeView === 'participants' && (
                     <>
@@ -877,24 +751,10 @@ export default function TeacherPage() {
                 {activeView === 'cameras' && (
                     <>
                         <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#111827', marginBottom: '16px' }}>
-                            📹 Live Cameras ({students.length})
+                            📹 Live Student Cameras ({students.length})
                         </h3>
 
-                        {!showCameras ? (
-                            <div style={{
-                                display: 'flex',
-                                flexDirection: 'column',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                height: '400px',
-                                color: '#9ca3af',
-                                fontSize: '14px',
-                            }}>
-                                <div style={{ fontSize: '64px', marginBottom: '16px' }}>🔒</div>
-                                <div style={{ fontWeight: '600', marginBottom: '8px' }}>Cameras Hidden</div>
-                                <div>Click "Show Student Cameras" button to enable</div>
-                            </div>
-                        ) : students.length === 0 ? (
+                        {students.length === 0 ? (
                             <div style={{
                                 display: 'flex',
                                 flexDirection: 'column',
@@ -1048,9 +908,9 @@ export default function TeacherPage() {
                             </div>
                         ) : (
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                                {alerts.map((alert, i) => (
+                                {alerts.map((alert) => (
                                     <div
-                                        key={`${alert.student_id}-${i}`}
+                                        key={alert.id}
                                         style={{
                                             padding: '16px',
                                             border: `2px solid ${ALERT_SEVERITY_COLORS[alert.severity]}`,
@@ -1092,7 +952,7 @@ export default function TeacherPage() {
             </div>
 
             {/* Teacher Camera Modal */}
-            {showMyCamera && <TeacherCamera onClose={() => setShowMyCamera(false)} />}
+            {showMyCamera && <TeacherCamera onClose={() => setShowMyCamera(false)} wsManager={wsRef.current} />}
         </div>
     );
 }

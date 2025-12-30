@@ -229,5 +229,4 @@ class ConnectionManager:
 
     def room_exists(self, room_id: str) -> bool:
         return room_id in self.rooms_teachers and len(self.rooms_teachers[room_id]) > 0
-
 manager = ConnectionManager()
