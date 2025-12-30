@@ -8,18 +8,21 @@ import asyncio
 from app.websocket_manager import manager
 from app.ai_processor import analyzer
 
+# IST Timezone
 IST = pytz.timezone('Asia/Kolkata')
 
 def get_ist_timestamp():
+    """Get current timestamp in IST"""
     return datetime.now(IST).isoformat()
 
+# Initialize FastAPI app
 app = FastAPI(
     title="Live Feedback System",
     description="Real-Time Student Attention Monitoring",
     version="2.0.0"
 )
 
-# CORS Configuration
+# Configure CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -30,15 +33,17 @@ app.add_middleware(
 
 @app.get("/")
 async def root():
+    """Root endpoint"""
     return {
         "message": "Live Feedback System API",
-        "status": "running",
         "version": "2.0.0",
+        "status": "running",
         "active_rooms": len(manager.rooms_teachers)
     }
 
 @app.get("/health")
-async def health():
+async def health_check():
+    """Health check endpoint"""
     return {
         "status": "healthy",
         "rooms": len(manager.rooms_teachers),
@@ -48,6 +53,7 @@ async def health():
 
 @app.get("/room/{room_id}/exists")
 async def check_room(room_id: str):
+    """Check if room exists"""
     return {
         "exists": manager.room_exists(room_id),
         "room_id": room_id
@@ -60,9 +66,9 @@ async def student_websocket(
     student_id: str,
     name: str = Query(..., description="Student name")
 ):
-    """WebSocket for students"""
+    """WebSocket endpoint for students"""
     
-    # Check room exists
+    # Check if room exists
     if not manager.room_exists(room_id):
         await websocket.accept()
         await websocket.send_json({
@@ -70,7 +76,7 @@ async def student_websocket(
             "message": f"Room {room_id} does not exist. Please check the room code."
         })
         await websocket.close(code=4004, reason="Room not found")
-        print(f"❌ Student tried to join non-existent room: {room_id}")
+        print(f"❌ Student {name} tried to join non-existent room: {room_id}")
         return
     
     # Connect student
@@ -78,7 +84,7 @@ async def student_websocket(
     if not success:
         return
     
-    print(f"✅ Student '{name}' ({student_id}) joined room {room_id}")
+    print(f"✅ Student '{name}' ({student_id[:8]}...) joined room {room_id}")
     
     # Send participant list
     participants = []
@@ -187,11 +193,53 @@ async def teacher_websocket(
     room_id: str = Query(None, description="Optional: Join existing room"),
     name: str = Query("Teacher", description="Teacher name")
 ):
-    """WebSocket for teachers - creates or joins room"""
+    """WebSocket endpoint for teachers - creates or joins room"""
     
-    created_room_id = await manager.connect_teacher(websocket, room_id, name)
+    # Accept connection FIRST
+    await websocket.accept()
+    print(f"✅ Teacher WebSocket accepted")
     
-    print(f"✅ Teacher connected - Room: {created_room_id}")
+    # Create or join room
+    created_room_id = None
+    async with manager.lock:
+        if room_id and room_id in manager.rooms_teachers:
+            # Join existing room
+            created_room_id = room_id
+            manager.rooms_teachers[room_id].append(websocket)
+            manager.teacher_rooms[websocket] = room_id
+            manager.teacher_names[websocket] = name
+            print(f"👨‍🏫 Teacher joined existing room: {created_room_id}")
+        else:
+            # Create new room
+            created_room_id = manager.generate_room_id()
+            manager.rooms_teachers[created_room_id] = [websocket]
+            manager.rooms_students[created_room_id] = {}
+            manager.rooms_students_info[created_room_id] = {}
+            manager.room_ids[created_room_id] = created_room_id
+            manager.teacher_rooms[websocket] = created_room_id
+            manager.teacher_names[websocket] = name
+            print(f"✅ Created NEW room: {created_room_id}")
+    
+    # Get current students list
+    students_list = []
+    if created_room_id in manager.rooms_students_info:
+        students_list = list(manager.rooms_students_info[created_room_id].values())
+    
+    # Send room_created message IMMEDIATELY
+    try:
+        await websocket.send_json({
+            "type": "room_created",
+            "data": {
+                "room_id": created_room_id,
+                "students": students_list,
+                "timestamp": get_ist_timestamp()
+            }
+        })
+        print(f"📤 Sent room_created with code: {created_room_id}")
+    except Exception as e:
+        print(f"❌ Error sending room_created: {e}")
+        await manager.disconnect_teacher(websocket)
+        return
     
     # Heartbeat to keep connection alive
     async def send_heartbeat():
@@ -212,6 +260,19 @@ async def teacher_websocket(
             
             if msg_type == "heartbeat":
                 await websocket.send_json({"type": "heartbeat_ack"})
+            
+            elif msg_type == "teacher_camera_frame":
+                # Teacher sends their camera frame
+                frame_data = data.get("frame")
+                if frame_data:
+                    # Broadcast to all students in room
+                    await manager.broadcast_to_room_students(created_room_id, {
+                        "type": "teacher_frame",
+                        "data": {
+                            "frame": frame_data,
+                            "timestamp": get_ist_timestamp()
+                        }
+                    })
             
             elif msg_type == "request_update":
                 # Teacher requests current state
@@ -236,19 +297,6 @@ async def teacher_websocket(
                         "timestamp": get_ist_timestamp()
                     }
                 }
-                elif msg_type == "teacher_camera_frame":
-                # Teacher sends their camera frame
-                frame_data = data.get("frame")
-                if frame_data:
-                    print(f"📹 Broadcasting teacher camera to students in room {created_room_id}")
-                    # Broadcast to all students
-                    await manager.broadcast_to_room_students(created_room_id, {
-                        "type": "teacher_frame",
-                        "data": {
-                            "frame": frame_data,
-                            "timestamp": get_ist_timestamp()
-                        }
-                    })
                 # Broadcast to all teachers and students in room
                 await manager.broadcast_to_room_teachers(created_room_id, chat_data)
                 await manager.broadcast_to_room_students(created_room_id, chat_data)
@@ -261,5 +309,3 @@ async def teacher_websocket(
         print(f"❌ Error in teacher websocket: {e}")
         heartbeat_task.cancel()
         await manager.disconnect_teacher(websocket)
-
-
