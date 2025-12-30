@@ -29,10 +29,12 @@ class ConnectionManager:
         characters = string.ascii_uppercase + string.digits
         while True:
             room_id = ''.join(secrets.choice(characters) for _ in range(6))
+            # Ensure uniqueness
             if room_id not in self.rooms_teachers and room_id not in self.room_ids.values():
+                print(f"🎲 Generated room ID: {room_id}")
                 return room_id
 
-    async def connect_student(self, websocket: WebSocket, room_id: str, student_id: str, student_name: str):
+    async def connect_student(self, websocket: WebSocket, room_id: str, student_id: str, student_name: str) -> bool:
         """Connect a student to a room"""
         await websocket.accept()
         
@@ -139,8 +141,8 @@ class ConnectionManager:
                                 "message": "Teacher has ended the class"
                             })
                             await student_ws.close(code=4003, reason="Room closed")
-                        except:
-                            pass
+                        except Exception as e:
+                            print(f"❌ Error notifying student: {e}")
                     
                     # Clean up room data
                     if room_id in self.rooms_teachers:
@@ -237,7 +239,9 @@ class ConnectionManager:
 
     def room_exists(self, room_id: str) -> bool:
         """Check if a room exists and has at least one teacher"""
-        return room_id in self.rooms_teachers and len(self.rooms_teachers[room_id]) > 0
+        exists = room_id in self.rooms_teachers and len(self.rooms_teachers[room_id]) > 0
+        print(f"🔍 Room {room_id} exists: {exists}")
+        return exists
 
 # Global manager instance
 manager = ConnectionManager()

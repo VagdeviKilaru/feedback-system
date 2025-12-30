@@ -309,3 +309,5 @@ async def teacher_websocket(
         print(f"❌ Error in teacher websocket: {e}")
         heartbeat_task.cancel()
         await manager.disconnect_teacher(websocket)
+
+

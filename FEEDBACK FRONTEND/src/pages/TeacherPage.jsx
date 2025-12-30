@@ -32,7 +32,7 @@ export default function TeacherPage() {
     const MAX_ALERTS = 50;
 
     const handleWebSocketMessage = useCallback((message) => {
-        console.log('📨 Teacher received:', message.type);
+        console.log('📨 Teacher received:', message.type, message);  // ADD THIS LINE
 
         switch (message.type) {
             case 'room_created':
@@ -40,6 +40,8 @@ export default function TeacherPage() {
                 setRoomId(message.data.room_id);
                 setStudents(message.data.students || []);
                 break;
+
+            // ... rest of the cases
 
             case 'student_join':
                 console.log('👋 Student joined:', message.data.student_name);
