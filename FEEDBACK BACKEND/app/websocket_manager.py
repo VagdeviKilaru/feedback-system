@@ -266,7 +266,14 @@ class ConnectionManager:
                 "timestamp": datetime.now().isoformat()
             }
         })
-
+    async def send_to_student(self, room_id: str, student_id: str, message: dict):
+        """Send message to specific student"""
+        if room_id in self.rooms_students and student_id in self.rooms_students[room_id]:
+            try:
+                await self.rooms_students[room_id][student_id].send_json(message)
+                print(f"📤 Sent to student {student_id[:8]}...: {message['type']}")
+            except Exception as e:
+                print(f"❌ Error sending to student {student_id[:8]}...: {e}")
     async def broadcast_camera_frame(self, room_id: str, student_id: str, frame_data: str):
         """Broadcast student's camera frame to teachers"""
         if room_id not in self.rooms_teachers:

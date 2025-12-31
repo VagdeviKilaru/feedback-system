@@ -4,6 +4,7 @@ import uvicorn
 from datetime import datetime
 import pytz
 import asyncio
+import json
 
 from app.websocket_manager import manager
 from app.ai_processor import analyzer
@@ -18,7 +19,7 @@ def get_ist_timestamp():
 # Initialize FastAPI app
 app = FastAPI(
     title="Live Feedback System",
-    description="Real-Time Student Attention Monitoring",
+    description="Real-Time Student Attention Monitoring with Audio",
     version="2.0.0"
 )
 
@@ -38,7 +39,8 @@ async def root():
         "message": "Live Feedback System API",
         "version": "2.0.0",
         "status": "running",
-        "active_rooms": len(manager.rooms_teachers)
+        "active_rooms": len(manager.rooms_teachers),
+        "features": ["video", "audio", "detection", "alerts"]
     }
 
 @app.get("/health")
@@ -116,30 +118,31 @@ async def student_websocket(
             if msg_type == "attention_update":
                 detection_data = data.get("data", {})
                 
-                print(f"📥 RECEIVED from {name}: status={detection_data.get('status')}, ear={detection_data.get('ear', 0):.3f}")
+                status = detection_data.get('status', 'no_face')
+                ear = detection_data.get('ear', 1.0)
+                
+                print(f"📥 {name}: {status.upper()} (EAR: {ear:.3f})")
                 
                 # Analyze attention
-                status, confidence, analysis = analyzer.analyze_attention(student_id, detection_data)
-                
-                print(f"📊 ANALYZED: {status}")
+                analyzed_status, confidence, analysis = analyzer.analyze_attention(student_id, detection_data)
                 
                 # Update student status
                 await manager.update_student_attention(room_id, student_id, {
-                    "status": status,
+                    "status": analyzed_status,
                     "confidence": confidence
                 })
                 
                 # Generate alert (or clear alert)
-                alert = analyzer.generate_alert(student_id, name, status, analysis)
+                alert = analyzer.generate_alert(student_id, name, analyzed_status, analysis)
                 if alert:
                     if alert['alert_type'] == 'clear_alert':
-                        print(f"✅ CLEAR ALERT for {name}")
+                        print(f"✅ CLEAR ALERT: {name}")
                         await manager.broadcast_to_room_teachers(room_id, {
                             "type": "clear_alert",
                             "data": {"student_id": student_id}
                         })
                     else:
-                        print(f"🚨 NEW ALERT: {alert['message']}")
+                        print(f"🚨 ALERT: {alert['message']}")
                         await manager.broadcast_to_room_teachers(room_id, {
                             "type": "alert",
                             "data": {
@@ -151,12 +154,55 @@ async def student_websocket(
                                 "timestamp": get_ist_timestamp()
                             }
                         })
-                        print(f"✅ ALERT SENT to teacher dashboard")
+                        print(f"✅ Alert sent to teacher")
             
             elif msg_type == "camera_frame":
                 frame_data = data.get("frame")
                 if frame_data:
                     await manager.broadcast_camera_frame(room_id, student_id, frame_data)
+            
+            elif msg_type == "webrtc_offer":
+                # Forward WebRTC offer to teacher
+                print(f"📞 WebRTC offer from {name}")
+                await manager.broadcast_to_room_teachers(room_id, {
+                    "type": "webrtc_offer",
+                    "data": {
+                        "student_id": student_id,
+                        "student_name": name,
+                        "offer": data.get("offer")
+                    }
+                })
+            
+            elif msg_type == "webrtc_answer":
+                # Forward WebRTC answer to specific student
+                target_id = data.get("target_id")
+                print(f"📞 WebRTC answer for {target_id[:8]}...")
+                await manager.send_to_student(room_id, target_id, {
+                    "type": "webrtc_answer",
+                    "data": {
+                        "answer": data.get("answer")
+                    }
+                })
+            
+            elif msg_type == "webrtc_ice_candidate":
+                # Forward ICE candidate
+                target_id = data.get("target_id")
+                if target_id:
+                    await manager.send_to_student(room_id, target_id, {
+                        "type": "webrtc_ice_candidate",
+                        "data": {
+                            "candidate": data.get("candidate"),
+                            "from_id": student_id
+                        }
+                    })
+                else:
+                    await manager.broadcast_to_room_teachers(room_id, {
+                        "type": "webrtc_ice_candidate",
+                        "data": {
+                            "student_id": student_id,
+                            "candidate": data.get("candidate")
+                        }
+                    })
             
             elif msg_type == "chat_message":
                 message = data.get("message", "")
@@ -170,7 +216,6 @@ async def student_websocket(
                         "timestamp": get_ist_timestamp()
                     }
                 }
-                # Broadcast to teachers and all students
                 await manager.broadcast_to_room_teachers(room_id, chat_data)
                 await manager.broadcast_to_room_students(room_id, chat_data)
             
@@ -206,19 +251,20 @@ async def teacher_websocket(
             # Join existing room
             created_room_id = room_id
             manager.rooms_teachers[room_id].append(websocket)
-            manager.teacher_rooms[websocket] = room_id
-            manager.teacher_names[websocket] = name
             print(f"👨‍🏫 Teacher joined existing room: {created_room_id}")
         else:
-            # Create new room
+            # Create NEW room
             created_room_id = manager.generate_room_id()
             manager.rooms_teachers[created_room_id] = [websocket]
             manager.rooms_students[created_room_id] = {}
             manager.rooms_students_info[created_room_id] = {}
+            # CRITICAL: Store room_id IMMEDIATELY
             manager.room_ids[created_room_id] = created_room_id
-            manager.teacher_rooms[websocket] = created_room_id
-            manager.teacher_names[websocket] = name
             print(f"✅ Created NEW room: {created_room_id}")
+            print(f"🔒 Room {created_room_id} stored permanently")
+        
+        manager.teacher_rooms[websocket] = created_room_id
+        manager.teacher_names[websocket] = name
     
     # Get current students list
     students_list = []
@@ -241,7 +287,7 @@ async def teacher_websocket(
         await manager.disconnect_teacher(websocket)
         return
     
-    # Heartbeat to keep connection alive
+    # Heartbeat
     async def send_heartbeat():
         try:
             while True:
@@ -265,7 +311,6 @@ async def teacher_websocket(
                 # Teacher sends their camera frame
                 frame_data = data.get("frame")
                 if frame_data:
-                    # Broadcast to all students in room
                     await manager.broadcast_to_room_students(created_room_id, {
                         "type": "teacher_frame",
                         "data": {
@@ -274,8 +319,49 @@ async def teacher_websocket(
                         }
                     })
             
+            elif msg_type == "webrtc_offer":
+                # Teacher sends WebRTC offer to all students
+                print(f"📞 Teacher WebRTC offer")
+                await manager.broadcast_to_room_students(created_room_id, {
+                    "type": "webrtc_offer",
+                    "data": {
+                        "offer": data.get("offer"),
+                        "from": "teacher"
+                    }
+                })
+            
+            elif msg_type == "webrtc_answer":
+                # Forward answer to specific student
+                target_id = data.get("target_id")
+                print(f"📞 Teacher WebRTC answer for {target_id[:8]}...")
+                await manager.send_to_student(created_room_id, target_id, {
+                    "type": "webrtc_answer",
+                    "data": {
+                        "answer": data.get("answer")
+                    }
+                })
+            
+            elif msg_type == "webrtc_ice_candidate":
+                # Forward ICE candidate
+                target_id = data.get("target_id")
+                if target_id:
+                    await manager.send_to_student(created_room_id, target_id, {
+                        "type": "webrtc_ice_candidate",
+                        "data": {
+                            "candidate": data.get("candidate"),
+                            "from": "teacher"
+                        }
+                    })
+                else:
+                    await manager.broadcast_to_room_students(created_room_id, {
+                        "type": "webrtc_ice_candidate",
+                        "data": {
+                            "candidate": data.get("candidate"),
+                            "from": "teacher"
+                        }
+                    })
+            
             elif msg_type == "request_update":
-                # Teacher requests current state
                 students_list = []
                 if created_room_id in manager.rooms_students_info:
                     students_list = list(manager.rooms_students_info[created_room_id].values())
@@ -297,7 +383,6 @@ async def teacher_websocket(
                         "timestamp": get_ist_timestamp()
                     }
                 }
-                # Broadcast to all teachers and students in room
                 await manager.broadcast_to_room_teachers(created_room_id, chat_data)
                 await manager.broadcast_to_room_students(created_room_id, chat_data)
     
@@ -311,3 +396,23 @@ async def teacher_websocket(
         await manager.disconnect_teacher(websocket)
 
 
+if __name__ == "__main__":
+    print("=" * 60)
+    print("🚀 Starting Live Feedback System Backend")
+    print("=" * 60)
+    print("📡 WebSocket Endpoints:")
+    print("   - Student: ws://localhost:8000/ws/student/{room_id}/{student_id}?name={name}")
+    print("   - Teacher: ws://localhost:8000/ws/teacher?name={name}")
+    print("🌐 API: http://localhost:8000")
+    print("📖 Docs: http://localhost:8000/docs")
+    print("🎤 Audio: WebRTC with STUN servers")
+    print("👁️  Detection: 3-rule system (attentive, looking_away, drowsy, no_face)")
+    print("=" * 60)
+    
+    uvicorn.run(
+        "main:app",
+        host="0.0.0.0",
+        port=8000,
+        reload=True,
+        log_level="info"
+    )

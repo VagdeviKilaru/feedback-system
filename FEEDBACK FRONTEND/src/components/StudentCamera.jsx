@@ -5,242 +5,263 @@ import { Camera } from '@mediapipe/camera_utils';
 export default function StudentCamera({ onStatusChange, onFrameCapture }) {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
-  const [status, setStatus] = useState('attentive');
-
+  const [status, setStatus] = useState('no_face');
+  const [isActive, setIsActive] = useState(false);
+  
+  const statusRef = useRef('no_face');
   const eyesClosedStartRef = useRef(null);
-  const lastStatusRef = useRef('attentive');
-  const mountedRef = useRef(true);
+  const lastFrameCaptureRef = useRef(0);
+  const lastStatusSendRef = useRef(0);
+  const faceMeshRef = useRef(null);
+  const cameraRef = useRef(null);
+
+  // EAR calculation (Eye Aspect Ratio)
+  const calculateEAR = (eye) => {
+    const A = Math.hypot(eye[1].x - eye[5].x, eye[1].y - eye[5].y);
+    const B = Math.hypot(eye[2].x - eye[4].x, eye[2].y - eye[4].y);
+    const C = Math.hypot(eye[0].x - eye[3].x, eye[0].y - eye[3].y);
+    return (A + B) / (2.0 * C);
+  };
 
   useEffect(() => {
-    mountedRef.current = true;
-    let frameInterval = null;
-    let faceMesh = null;
-    let camera = null;
+    let mounted = true;
 
-    async function startCamera() {
+    const initializeCamera = async () => {
       try {
-        console.log('🎥 Requesting camera access...');
-
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: {
-            width: { ideal: 640 },
-            height: { ideal: 480 },
-            facingMode: 'user'
-          },
-          audio: false
-        });
-
-        if (!mountedRef.current) {
-          stream.getTracks().forEach(t => t.stop());
-          return;
-        }
-
-        const video = videoRef.current;
-        video.srcObject = stream;
-        await video.play();
-
-        console.log('✅ Camera active');
-
-        // Canvas setup
-        const canvas = canvasRef.current;
-        canvas.width = 640;
-        canvas.height = 480;
-
-        // Frame capture every 1 second
-        frameInterval = setInterval(() => {
-          if (!mountedRef.current || !video || video.paused) return;
-
-          try {
-            const ctx = canvas.getContext('2d');
-            ctx.drawImage(video, 0, 0, 640, 480);
-            const frame = canvas.toDataURL('image/jpeg', 0.7);
-            if (onFrameCapture) onFrameCapture(frame);
-          } catch (e) {
-            // Silent fail
-          }
-        }, 1000);
-
-        // MediaPipe FaceMesh
-        console.log('🤖 Initializing FaceMesh...');
-
-        faceMesh = new FaceMesh({
+        console.log('🎥 Initializing student camera...');
+        
+        // Initialize FaceMesh
+        faceMeshRef.current = new FaceMesh({
           locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`
         });
 
-        faceMesh.setOptions({
+        faceMeshRef.current.setOptions({
           maxNumFaces: 1,
-          refineLandmarks: false,
+          refineLandmarks: true,
           minDetectionConfidence: 0.5,
-          minTrackingConfidence: 0.5,
+          minTrackingConfidence: 0.5
         });
 
-        faceMesh.onResults(onResults);
+        faceMeshRef.current.onResults((results) => {
+          if (!mounted) return;
 
-        console.log('✅ FaceMesh ready');
+          const now = Date.now();
+          const canvas = canvasRef.current;
+          const ctx = canvas.getContext('2d');
 
-        // Start processing
-        camera = new Camera(video, {
-          onFrame: async () => {
-            if (faceMesh && mountedRef.current) {
-              await faceMesh.send({ image: video });
+          // Draw video frame
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+          ctx.drawImage(results.image, 0, 0, canvas.width, canvas.height);
+
+          let currentStatus = 'no_face';
+          let ear = 1.0;
+          let noseX = 0.5;
+          let noseY = 0.5;
+
+          // THREE RULES OF DETECTION
+          if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
+            const landmarks = results.multiFaceLandmarks[0];
+
+            // Get nose position (landmark 1)
+            const nose = landmarks[1];
+            noseX = nose.x;
+            noseY = nose.y;
+
+            // Get eye landmarks
+            const leftEye = [
+              landmarks[33], landmarks[160], landmarks[158],
+              landmarks[133], landmarks[153], landmarks[144]
+            ];
+            const rightEye = [
+              landmarks[362], landmarks[385], landmarks[387],
+              landmarks[263], landmarks[373], landmarks[380]
+            ];
+
+            // Calculate EAR
+            const leftEAR = calculateEAR(leftEye);
+            const rightEAR = calculateEAR(rightEye);
+            ear = (leftEAR + rightEAR) / 2.0;
+
+            // RULE 1: Check if looking straight (ATTENTIVE)
+            const isLookingStraight = (
+              noseX >= 0.35 && noseX <= 0.65 &&
+              noseY >= 0.35 && noseY <= 0.65
+            );
+
+            // RULE 2: Check if eyes closed (DROWSY)
+            const eyesClosed = ear < 0.20;
+
+            // RULE 3: Check if looking away (HEAD TURNED)
+            const lookingAway = !isLookingStraight;
+
+            // Determine status
+            if (eyesClosed) {
+              // Eyes closed - check duration
+              if (!eyesClosedStartRef.current) {
+                eyesClosedStartRef.current = now;
+              }
+              const eyesClosedDuration = (now - eyesClosedStartRef.current) / 1000;
+              
+              if (eyesClosedDuration > 2.0) {
+                currentStatus = 'drowsy'; // DROWSY: Eyes closed > 2 seconds
+              } else {
+                currentStatus = 'attentive'; // Still attentive if < 2 seconds
+              }
+            } else {
+              // Eyes open
+              eyesClosedStartRef.current = null;
+              
+              if (lookingAway) {
+                currentStatus = 'looking_away'; // LOOKING AWAY: Head turned
+              } else {
+                currentStatus = 'attentive'; // ATTENTIVE: Looking straight
+              }
             }
-          },
-          width: 640,
-          height: 480,
+          } else {
+            // NO FACE DETECTED
+            currentStatus = 'no_face';
+            eyesClosedStartRef.current = null;
+          }
+
+          // Update status if changed
+          if (currentStatus !== statusRef.current) {
+            console.log(`📊 Status changed: ${statusRef.current} → ${currentStatus}`);
+            statusRef.current = currentStatus;
+            setStatus(currentStatus);
+          }
+
+          // Send status update every 1 second
+          if (now - lastStatusSendRef.current > 1000) {
+            const detectionData = {
+              status: currentStatus,
+              ear: ear,
+              nose_x: noseX,
+              nose_y: noseY,
+              timestamp: now
+            };
+            
+            if (onStatusChange) {
+              onStatusChange(detectionData);
+            }
+            
+            lastStatusSendRef.current = now;
+          }
+
+          // Capture frame every 2 seconds
+          if (now - lastFrameCaptureRef.current > 2000) {
+            const frameData = canvas.toDataURL('image/jpeg', 0.7);
+            if (onFrameCapture) {
+              onFrameCapture(frameData);
+            }
+            lastFrameCaptureRef.current = now;
+          }
         });
 
-        camera.start();
-        console.log('✅ Detection running');
-
-      } catch (err) {
-        console.error('❌ Camera error:', err);
-      }
-    }
-
-    function onResults(results) {
-      if (!mountedRef.current) return;
-
-      // If no face - just keep last status, don't send "no_face"
-      if (!results.multiFaceLandmarks || results.multiFaceLandmarks.length === 0) {
-        // Don't update status to no_face - just ignore
-        return;
-      }
-
-      const landmarks = results.multiFaceLandmarks[0];
-
-      // Eye landmarks
-      const leftEyeTop = landmarks[159];
-      const leftEyeBottom = landmarks[145];
-      const leftEyeLeft = landmarks[33];
-      const leftEyeRight = landmarks[133];
-
-      const rightEyeTop = landmarks[386];
-      const rightEyeBottom = landmarks[374];
-      const rightEyeLeft = landmarks[362];
-      const rightEyeRight = landmarks[263];
-
-      const nose = landmarks[1];
-
-      // Calculate EAR
-      const leftH = Math.abs(leftEyeTop.y - leftEyeBottom.y);
-      const leftW = Math.abs(leftEyeLeft.x - leftEyeRight.x);
-      const leftEAR = leftH / (leftW || 0.001);
-
-      const rightH = Math.abs(rightEyeTop.y - rightEyeBottom.y);
-      const rightW = Math.abs(rightEyeLeft.x - rightEyeRight.x);
-      const rightEAR = rightH / (rightW || 0.001);
-
-      const ear = (leftEAR + rightEAR) / 2;
-      const noseX = nose.x;
-      const noseY = nose.y;
-
-      let newStatus = 'attentive';
-
-      // Check looking away
-      if (noseX < 0.35 || noseX > 0.65 || noseY < 0.35 || noseY > 0.65) {
-        newStatus = 'looking_away';
-        eyesClosedStartRef.current = null;
-      }
-      // Check drowsy
-      else if (ear < 0.20) {
-        const now = Date.now();
-        if (!eyesClosedStartRef.current) {
-          eyesClosedStartRef.current = now;
-        }
-        const duration = (now - eyesClosedStartRef.current) / 1000;
-
-        if (duration >= 2.5) {
-          newStatus = 'drowsy';
-        }
-      }
-      else {
-        eyesClosedStartRef.current = null;
-      }
-
-      updateStatus(newStatus, ear, noseX, noseY);
-    }
-
-    function updateStatus(newStatus, ear, noseX, noseY) {
-      setStatus(newStatus);
-
-      // Send only when changed
-      if (newStatus !== lastStatusRef.current) {
-        lastStatusRef.current = newStatus;
-
-        console.log(`📤 ${newStatus} | EAR: ${ear.toFixed(3)} | Nose: (${noseX.toFixed(2)}, ${noseY.toFixed(2)})`);
-
-        if (onStatusChange) {
-          onStatusChange({
-            status: newStatus,
-            ear: ear,
-            nose_x: noseX,
-            nose_y: noseY,
-            timestamp: new Date().toISOString()
+        // Initialize camera
+        if (videoRef.current) {
+          cameraRef.current = new Camera(videoRef.current, {
+            onFrame: async () => {
+              if (faceMeshRef.current && mounted) {
+                await faceMeshRef.current.send({ image: videoRef.current });
+              }
+            },
+            width: 640,
+            height: 480
           });
-        }
-      }
-    }
 
-    startCamera();
+          await cameraRef.current.start();
+          setIsActive(true);
+          console.log('✅ Student camera active');
+        }
+
+      } catch (error) {
+        console.error('❌ Camera initialization error:', error);
+      }
+    };
+
+    initializeCamera();
 
     return () => {
-      console.log('🛑 Cleanup camera');
-      mountedRef.current = false;
-
-      if (frameInterval) clearInterval(frameInterval);
-      if (camera) camera.stop();
-      if (videoRef.current?.srcObject) {
-        videoRef.current.srcObject.getTracks().forEach(t => t.stop());
+      mounted = false;
+      console.log('🛑 Stopping student camera');
+      if (cameraRef.current) {
+        cameraRef.current.stop();
       }
     };
   }, [onStatusChange, onFrameCapture]);
 
-  const colors = {
-    attentive: '#22c55e',
-    looking_away: '#f59e0b',
-    drowsy: '#ef4444'
+  const getStatusColor = () => {
+    switch (status) {
+      case 'attentive': return '#22c55e';
+      case 'looking_away': return '#f59e0b';
+      case 'drowsy': return '#ef4444';
+      case 'no_face': return '#6b7280';
+      default: return '#6b7280';
+    }
   };
 
-  const labels = {
-    attentive: '✓ ATTENTIVE',
-    looking_away: '⚠️ LOOKING AWAY',
-    drowsy: '😴 DROWSY'
+  const getStatusText = () => {
+    switch (status) {
+      case 'attentive': return '✓ ATTENTIVE';
+      case 'looking_away': return '👀 LOOKING AWAY';
+      case 'drowsy': return '😴 DROWSY';
+      case 'no_face': return '❌ NO FACE';
+      default: return 'DETECTING...';
+    }
   };
 
   return (
-    <div style={{ position: 'relative', width: '100%', maxWidth: '640px', margin: '0 auto' }}>
+    <div style={{ position: 'relative', width: '100%', height: '100%' }}>
       <video
         ref={videoRef}
-        autoPlay
+        style={{ display: 'none' }}
         playsInline
-        muted
+      />
+      <canvas
+        ref={canvasRef}
+        width={640}
+        height={480}
         style={{
           width: '100%',
-          height: 'auto',
-          borderRadius: '12px',
+          height: '100%',
+          objectFit: 'cover',
           transform: 'scaleX(-1)',
-          background: '#000'
         }}
       />
-
-      <canvas ref={canvasRef} style={{ display: 'none' }} />
-
+      
+      {/* Status Overlay */}
       <div style={{
         position: 'absolute',
-        bottom: '16px',
-        left: '50%',
-        transform: 'translateX(-50%)',
-        padding: '12px 24px',
-        backgroundColor: colors[status],
+        bottom: '0',
+        left: '0',
+        right: '0',
+        padding: '8px',
+        backgroundColor: getStatusColor(),
         color: 'white',
-        borderRadius: '24px',
-        fontWeight: 'bold',
-        fontSize: '16px',
-        boxShadow: `0 4px 12px ${colors[status]}66`,
-        whiteSpace: 'nowrap'
+        textAlign: 'center',
+        fontSize: '13px',
+        fontWeight: '600',
       }}>
-        {labels[status]}
+        {getStatusText()}
       </div>
+
+      {!isActive && (
+        <div style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          backgroundColor: 'rgba(0, 0, 0, 0.7)',
+          color: 'white',
+          fontSize: '14px',
+        }}>
+          Starting camera...
+        </div>
+      )}
     </div>
   );
 }

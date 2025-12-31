@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import StudentCamera from '../components/StudentCamera';
+import AudioManager from '../components/AudioManager';
 import { WebSocketManager } from '../utils/websocket';
 import { formatTimeIST } from '../utils/detection';
 
@@ -19,54 +20,12 @@ export default function StudentPage() {
     const [activeTab, setActiveTab] = useState('camera');
     const [teacherFrame, setTeacherFrame] = useState(null);
     const [participantFrames, setParticipantFrames] = useState({});
-
-    // AUDIO STATES
-    const [isMuted, setIsMuted] = useState(true);
-    const [isAudioEnabled, setIsAudioEnabled] = useState(false);
+    const [audioStatus, setAudioStatus] = useState({ enabled: false, muted: true, connected: false });
 
     const wsRef = useRef(null);
     const studentIdRef = useRef(null);
     const chatEndRef = useRef(null);
     const reconnectTimeoutRef = useRef(null);
-    const audioStreamRef = useRef(null);
-
-    // AUDIO FUNCTIONS
-    const toggleAudio = async () => {
-        if (!isAudioEnabled) {
-            try {
-                console.log('🎤 Requesting microphone access...');
-                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                audioStreamRef.current = stream;
-                setIsAudioEnabled(true);
-                setIsMuted(false);
-                console.log('✅ Student microphone enabled');
-                alert('Microphone enabled! Click "Unmuted" to start speaking.');
-            } catch (err) {
-                console.error('❌ Microphone access denied:', err);
-                alert('Could not access microphone. Please allow microphone permission in browser settings.');
-            }
-        } else {
-            // Stop audio stream
-            if (audioStreamRef.current) {
-                audioStreamRef.current.getTracks().forEach(track => track.stop());
-                audioStreamRef.current = null;
-            }
-            setIsAudioEnabled(false);
-            setIsMuted(true);
-            console.log('🎤 Student microphone disabled');
-        }
-    };
-
-    const toggleMute = () => {
-        if (audioStreamRef.current) {
-            const audioTracks = audioStreamRef.current.getAudioTracks();
-            audioTracks.forEach(track => {
-                track.enabled = isMuted; // Toggle: if muted, enable; if unmuted, disable
-            });
-            setIsMuted(!isMuted);
-            console.log(`🎤 Student ${isMuted ? 'UNMUTED' : 'MUTED'}`);
-        }
-    };
 
     const handleWebSocketMessage = useCallback((message) => {
         console.log('📨 Student received:', message.type);
@@ -163,9 +122,6 @@ export default function StudentPage() {
             if (wsRef.current) {
                 wsRef.current.disconnect();
             }
-            if (audioStreamRef.current) {
-                audioStreamRef.current.getTracks().forEach(track => track.stop());
-            }
             setIsJoined(false);
             navigate('/');
         }
@@ -208,9 +164,6 @@ export default function StudentPage() {
             }
             if (wsRef.current) {
                 wsRef.current.disconnect();
-            }
-            if (audioStreamRef.current) {
-                audioStreamRef.current.getTracks().forEach(track => track.stop());
             }
         };
     }, []);
@@ -375,41 +328,16 @@ export default function StudentPage() {
                         ● {isConnected ? 'Connected' : 'Reconnecting...'}
                     </div>
 
-                    {/* Audio Enable/Disable */}
-                    <button
-                        onClick={toggleAudio}
-                        style={{
-                            padding: '8px 16px',
-                            backgroundColor: isAudioEnabled ? '#22c55e' : '#6b7280',
-                            color: 'white',
-                            border: 'none',
-                            borderRadius: '8px',
-                            cursor: 'pointer',
-                            fontSize: '14px',
-                            fontWeight: '600',
+                    {/* Audio Manager Component */}
+                    <AudioManager
+                        wsManager={wsRef.current}
+                        userId={studentIdRef.current}
+                        userType="student"
+                        onStatusChange={(status) => {
+                            setAudioStatus(status);
+                            console.log('Student audio:', status);
                         }}
-                    >
-                        🎤 {isAudioEnabled ? 'Audio ON' : 'Audio OFF'}
-                    </button>
-
-                    {/* Mute/Unmute (only shows when audio enabled) */}
-                    {isAudioEnabled && (
-                        <button
-                            onClick={toggleMute}
-                            style={{
-                                padding: '8px 16px',
-                                backgroundColor: isMuted ? '#ef4444' : '#22c55e',
-                                color: 'white',
-                                border: 'none',
-                                borderRadius: '8px',
-                                cursor: 'pointer',
-                                fontSize: '14px',
-                                fontWeight: '600',
-                            }}
-                        >
-                            {isMuted ? '🔇 MUTED' : '🔊 UNMUTED'}
-                        </button>
-                    )}
+                    />
 
                     {/* Leave Button */}
                     <button
@@ -429,6 +357,33 @@ export default function StudentPage() {
                     </button>
                 </div>
             </div>
+
+            {/* Audio Status Indicator */}
+            {audioStatus.enabled && (
+                <div style={{
+                    backgroundColor: 'white',
+                    padding: '12px 24px',
+                    marginBottom: '20px',
+                    borderRadius: '12px',
+                    boxShadow: '0 4px 12px rgba(0, 0, 0, 0.1)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '12px',
+                    fontSize: '14px',
+                    fontWeight: '600',
+                    color: audioStatus.connected ? '#166534' : '#92400e',
+                    backgroundColor: audioStatus.connected ? '#dcfce7' : '#fef3c7',
+                }}>
+                    <span style={{ fontSize: '20px' }}>
+                        {audioStatus.connected ? '🔊' : '🔌'}
+                    </span>
+                    <span>
+                        {audioStatus.connected
+                            ? `Audio Connected ${audioStatus.muted ? '(Muted)' : '(Speaking)'}`
+                            : 'Connecting audio...'}
+                    </span>
+                </div>
+            )}
 
             {/* Tabs */}
             <div style={{
@@ -571,15 +526,15 @@ export default function StudentPage() {
                                 alignItems: 'center',
                             }}>
                                 <span>📹 You</span>
-                                {/* Audio indicator in corner camera */}
-                                {isAudioEnabled && (
+                                {/* Audio indicator */}
+                                {audioStatus.enabled && (
                                     <span style={{
                                         fontSize: '10px',
                                         padding: '2px 6px',
-                                        backgroundColor: isMuted ? '#ef4444' : '#22c55e',
+                                        backgroundColor: audioStatus.muted ? '#ef4444' : '#22c55e',
                                         borderRadius: '8px',
                                     }}>
-                                        {isMuted ? '🔇' : '🔊'}
+                                        {audioStatus.muted ? '🔇' : '🔊'}
                                     </span>
                                 )}
                             </div>
