@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import StudentCamera from '../components/StudentCamera';
 import { WebSocketManager } from '../utils/websocket';
 import { formatTimeIST } from '../utils/detection';
@@ -19,11 +19,47 @@ export default function StudentPage() {
     const [activeTab, setActiveTab] = useState('camera');
     const [teacherFrame, setTeacherFrame] = useState(null);
     const [participantFrames, setParticipantFrames] = useState({});
+    const [isMuted, setIsMuted] = useState(true);
+    const [isAudioEnabled, setIsAudioEnabled] = useState(false);
 
     const wsRef = useRef(null);
     const studentIdRef = useRef(null);
     const chatEndRef = useRef(null);
     const reconnectTimeoutRef = useRef(null);
+    const audioStreamRef = useRef(null);
+
+    const toggleAudio = async () => {
+        if (!isAudioEnabled) {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                audioStreamRef.current = stream;
+                setIsAudioEnabled(true);
+                setIsMuted(false);
+                console.log('🎤 Student microphone enabled');
+            } catch (err) {
+                console.error('Microphone access denied:', err);
+                alert('Could not access microphone. Please allow microphone permission.');
+            }
+        } else {
+            if (audioStreamRef.current) {
+                audioStreamRef.current.getTracks().forEach(track => track.stop());
+                audioStreamRef.current = null;
+            }
+            setIsAudioEnabled(false);
+            setIsMuted(true);
+            console.log('🎤 Student microphone disabled');
+        }
+    };
+
+    const toggleMute = () => {
+        if (audioStreamRef.current) {
+            audioStreamRef.current.getAudioTracks().forEach(track => {
+                track.enabled = !isMuted;
+            });
+            setIsMuted(!isMuted);
+            console.log(`🎤 Student ${!isMuted ? 'Muted' : 'Unmuted'}`);
+        }
+    };
 
     const handleWebSocketMessage = useCallback((message) => {
         console.log('📨 Student received:', message.type);
@@ -50,12 +86,10 @@ export default function StudentPage() {
                 break;
 
             case 'teacher_frame':
-                // Teacher's camera frame
                 setTeacherFrame(message.data.frame);
                 break;
 
             case 'camera_frame':
-                // Other students' camera frames
                 if (message.data.student_id !== studentIdRef.current) {
                     setParticipantFrames(prev => ({
                         ...prev,
@@ -122,6 +156,9 @@ export default function StudentPage() {
             if (wsRef.current) {
                 wsRef.current.disconnect();
             }
+            if (audioStreamRef.current) {
+                audioStreamRef.current.getTracks().forEach(track => track.stop());
+            }
             setIsJoined(false);
             navigate('/');
         }
@@ -164,6 +201,9 @@ export default function StudentPage() {
             }
             if (wsRef.current) {
                 wsRef.current.disconnect();
+            }
+            if (audioStreamRef.current) {
+                audioStreamRef.current.getTracks().forEach(track => track.stop());
             }
         };
     }, []);
@@ -316,7 +356,7 @@ export default function StudentPage() {
                     </p>
                 </div>
 
-                <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+                <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
                     <div style={{
                         padding: '8px 16px',
                         backgroundColor: isConnected ? '#dcfce7' : '#fee2e2',
@@ -326,6 +366,40 @@ export default function StudentPage() {
                     }}>
                         ● {isConnected ? 'Connected' : 'Reconnecting...'}
                     </div>
+
+                    <button
+                        onClick={toggleAudio}
+                        style={{
+                            padding: '8px 16px',
+                            backgroundColor: isAudioEnabled ? '#22c55e' : '#6b7280',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '8px',
+                            cursor: 'pointer',
+                            fontSize: '14px',
+                            fontWeight: '600',
+                        }}
+                    >
+                        🎤 {isAudioEnabled ? 'Audio On' : 'Audio Off'}
+                    </button>
+
+                    {isAudioEnabled && (
+                        <button
+                            onClick={toggleMute}
+                            style={{
+                                padding: '8px 16px',
+                                backgroundColor: isMuted ? '#ef4444' : '#22c55e',
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: '8px',
+                                cursor: 'pointer',
+                                fontSize: '14px',
+                                fontWeight: '600',
+                            }}
+                        >
+                            {isMuted ? '🔇 Muted' : '🔊 Unmuted'}
+                        </button>
+                    )}
 
                     <button
                         onClick={handleLeave}

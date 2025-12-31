@@ -25,14 +25,50 @@ export default function TeacherPage() {
     const [messages, setMessages] = useState([]);
     const [messageInput, setMessageInput] = useState('');
     const [showChat, setShowChat] = useState(false);
+    const [isMuted, setIsMuted] = useState(true);
+    const [isAudioEnabled, setIsAudioEnabled] = useState(false);
 
     const wsRef = useRef(null);
     const chatEndRef = useRef(null);
     const reconnectTimeoutRef = useRef(null);
+    const audioStreamRef = useRef(null);
     const MAX_ALERTS = 50;
 
+    const toggleAudio = async () => {
+        if (!isAudioEnabled) {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                audioStreamRef.current = stream;
+                setIsAudioEnabled(true);
+                setIsMuted(false);
+                console.log('🎤 Teacher microphone enabled');
+            } catch (err) {
+                console.error('Microphone access denied:', err);
+                alert('Could not access microphone. Please allow microphone permission.');
+            }
+        } else {
+            if (audioStreamRef.current) {
+                audioStreamRef.current.getTracks().forEach(track => track.stop());
+                audioStreamRef.current = null;
+            }
+            setIsAudioEnabled(false);
+            setIsMuted(true);
+            console.log('🎤 Teacher microphone disabled');
+        }
+    };
+
+    const toggleMute = () => {
+        if (audioStreamRef.current) {
+            audioStreamRef.current.getAudioTracks().forEach(track => {
+                track.enabled = !isMuted;
+            });
+            setIsMuted(!isMuted);
+            console.log(`🎤 Teacher ${!isMuted ? 'Muted' : 'Unmuted'}`);
+        }
+    };
+
     const handleWebSocketMessage = useCallback((message) => {
-        console.log('📨 Teacher received:', message.type, message);  // ADD THIS LINE
+        console.log('📨 Teacher received:', message.type, message);
 
         switch (message.type) {
             case 'room_created':
@@ -40,8 +76,6 @@ export default function TeacherPage() {
                 setRoomId(message.data.room_id);
                 setStudents(message.data.students || []);
                 break;
-
-            // ... rest of the cases
 
             case 'student_join':
                 console.log('👋 Student joined:', message.data.student_name);
@@ -91,11 +125,11 @@ export default function TeacherPage() {
                 break;
 
             case 'alert':
-                console.log('🚨 ALERT RECEIVED:', message.data.message);
+                console.log('🚨 ALERT RECEIVED ON FRONTEND:', message.data);
                 setAlerts(prev => {
                     const exists = prev.some(a => a.student_id === message.data.student_id);
                     if (exists) {
-                        console.log('⚠️ Alert already exists for this student');
+                        console.log('⚠️ Alert already exists, skipping');
                         return prev;
                     }
 
@@ -109,7 +143,7 @@ export default function TeacherPage() {
                         timestamp: message.data.timestamp,
                     };
 
-                    console.log('✅ Adding new alert to dashboard');
+                    console.log('✅ ADDING ALERT TO STATE:', newAlert);
                     return [newAlert, ...prev].slice(0, MAX_ALERTS);
                 });
 
@@ -172,6 +206,9 @@ export default function TeacherPage() {
             if (wsRef.current) {
                 wsRef.current.disconnect();
             }
+            if (audioStreamRef.current) {
+                audioStreamRef.current.getTracks().forEach(track => track.stop());
+            }
         };
     }, [handleWebSocketMessage]);
 
@@ -207,6 +244,9 @@ export default function TeacherPage() {
     const handleLeaveClass = () => {
         if (confirm('Are you sure you want to end the class for all students?')) {
             if (wsRef.current) wsRef.current.disconnect();
+            if (audioStreamRef.current) {
+                audioStreamRef.current.getTracks().forEach(track => track.stop());
+            }
             navigate('/');
         }
     };
@@ -293,6 +333,40 @@ export default function TeacherPage() {
                         >
                             📹 Show My Camera
                         </button>
+
+                        <button
+                            onClick={toggleAudio}
+                            style={{
+                                padding: '8px 16px',
+                                backgroundColor: isAudioEnabled ? '#22c55e' : '#6b7280',
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: '8px',
+                                cursor: 'pointer',
+                                fontSize: '14px',
+                                fontWeight: '600',
+                            }}
+                        >
+                            🎤 {isAudioEnabled ? 'Audio On' : 'Audio Off'}
+                        </button>
+
+                        {isAudioEnabled && (
+                            <button
+                                onClick={toggleMute}
+                                style={{
+                                    padding: '8px 16px',
+                                    backgroundColor: isMuted ? '#ef4444' : '#22c55e',
+                                    color: 'white',
+                                    border: 'none',
+                                    borderRadius: '8px',
+                                    cursor: 'pointer',
+                                    fontSize: '14px',
+                                    fontWeight: '600',
+                                }}
+                            >
+                                {isMuted ? '🔇 Muted' : '🔊 Unmuted'}
+                            </button>
+                        )}
 
                         <button
                             onClick={() => setShowChat(!showChat)}
