@@ -19,6 +19,8 @@ export default function StudentPage() {
     const [activeTab, setActiveTab] = useState('camera');
     const [teacherFrame, setTeacherFrame] = useState(null);
     const [participantFrames, setParticipantFrames] = useState({});
+
+    // AUDIO STATES
     const [isMuted, setIsMuted] = useState(true);
     const [isAudioEnabled, setIsAudioEnabled] = useState(false);
 
@@ -28,19 +30,23 @@ export default function StudentPage() {
     const reconnectTimeoutRef = useRef(null);
     const audioStreamRef = useRef(null);
 
+    // AUDIO FUNCTIONS
     const toggleAudio = async () => {
         if (!isAudioEnabled) {
             try {
+                console.log('🎤 Requesting microphone access...');
                 const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
                 audioStreamRef.current = stream;
                 setIsAudioEnabled(true);
                 setIsMuted(false);
-                console.log('🎤 Student microphone enabled');
+                console.log('✅ Student microphone enabled');
+                alert('Microphone enabled! Click "Unmuted" to start speaking.');
             } catch (err) {
-                console.error('Microphone access denied:', err);
-                alert('Could not access microphone. Please allow microphone permission.');
+                console.error('❌ Microphone access denied:', err);
+                alert('Could not access microphone. Please allow microphone permission in browser settings.');
             }
         } else {
+            // Stop audio stream
             if (audioStreamRef.current) {
                 audioStreamRef.current.getTracks().forEach(track => track.stop());
                 audioStreamRef.current = null;
@@ -53,11 +59,12 @@ export default function StudentPage() {
 
     const toggleMute = () => {
         if (audioStreamRef.current) {
-            audioStreamRef.current.getAudioTracks().forEach(track => {
-                track.enabled = !isMuted;
+            const audioTracks = audioStreamRef.current.getAudioTracks();
+            audioTracks.forEach(track => {
+                track.enabled = isMuted; // Toggle: if muted, enable; if unmuted, disable
             });
             setIsMuted(!isMuted);
-            console.log(`🎤 Student ${!isMuted ? 'Muted' : 'Unmuted'}`);
+            console.log(`🎤 Student ${isMuted ? 'UNMUTED' : 'MUTED'}`);
         }
     };
 
@@ -357,6 +364,7 @@ export default function StudentPage() {
                 </div>
 
                 <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
+                    {/* Connection Status */}
                     <div style={{
                         padding: '8px 16px',
                         backgroundColor: isConnected ? '#dcfce7' : '#fee2e2',
@@ -367,6 +375,7 @@ export default function StudentPage() {
                         ● {isConnected ? 'Connected' : 'Reconnecting...'}
                     </div>
 
+                    {/* Audio Enable/Disable */}
                     <button
                         onClick={toggleAudio}
                         style={{
@@ -380,9 +389,10 @@ export default function StudentPage() {
                             fontWeight: '600',
                         }}
                     >
-                        🎤 {isAudioEnabled ? 'Audio On' : 'Audio Off'}
+                        🎤 {isAudioEnabled ? 'Audio ON' : 'Audio OFF'}
                     </button>
 
+                    {/* Mute/Unmute (only shows when audio enabled) */}
                     {isAudioEnabled && (
                         <button
                             onClick={toggleMute}
@@ -397,10 +407,11 @@ export default function StudentPage() {
                                 fontWeight: '600',
                             }}
                         >
-                            {isMuted ? '🔇 Muted' : '🔊 Unmuted'}
+                            {isMuted ? '🔇 MUTED' : '🔊 UNMUTED'}
                         </button>
                     )}
 
+                    {/* Leave Button */}
                     <button
                         onClick={handleLeave}
                         style={{
@@ -546,6 +557,7 @@ export default function StudentPage() {
                             borderRadius: '12px',
                             border: '3px solid #22c55e',
                             overflow: 'hidden',
+                            backgroundColor: 'white',
                         }}>
                             <div style={{
                                 backgroundColor: '#22c55e',
@@ -554,8 +566,22 @@ export default function StudentPage() {
                                 fontSize: '12px',
                                 fontWeight: '600',
                                 textAlign: 'center',
+                                display: 'flex',
+                                justifyContent: 'space-between',
+                                alignItems: 'center',
                             }}>
-                                📹 You
+                                <span>📹 You</span>
+                                {/* Audio indicator in corner camera */}
+                                {isAudioEnabled && (
+                                    <span style={{
+                                        fontSize: '10px',
+                                        padding: '2px 6px',
+                                        backgroundColor: isMuted ? '#ef4444' : '#22c55e',
+                                        borderRadius: '8px',
+                                    }}>
+                                        {isMuted ? '🔇' : '🔊'}
+                                    </span>
+                                )}
                             </div>
                             <StudentCamera
                                 onStatusChange={handleStatusChange}

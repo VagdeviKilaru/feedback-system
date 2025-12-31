@@ -25,6 +25,8 @@ export default function TeacherPage() {
     const [messages, setMessages] = useState([]);
     const [messageInput, setMessageInput] = useState('');
     const [showChat, setShowChat] = useState(false);
+
+    // AUDIO STATES
     const [isMuted, setIsMuted] = useState(true);
     const [isAudioEnabled, setIsAudioEnabled] = useState(false);
 
@@ -34,19 +36,23 @@ export default function TeacherPage() {
     const audioStreamRef = useRef(null);
     const MAX_ALERTS = 50;
 
+    // AUDIO FUNCTIONS
     const toggleAudio = async () => {
         if (!isAudioEnabled) {
             try {
+                console.log('🎤 Requesting microphone access...');
                 const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
                 audioStreamRef.current = stream;
                 setIsAudioEnabled(true);
                 setIsMuted(false);
-                console.log('🎤 Teacher microphone enabled');
+                console.log('✅ Teacher microphone enabled');
+                alert('Microphone enabled! Click "Unmuted" to start speaking.');
             } catch (err) {
-                console.error('Microphone access denied:', err);
-                alert('Could not access microphone. Please allow microphone permission.');
+                console.error('❌ Microphone access denied:', err);
+                alert('Could not access microphone. Please allow microphone permission in browser settings.');
             }
         } else {
+            // Stop audio stream
             if (audioStreamRef.current) {
                 audioStreamRef.current.getTracks().forEach(track => track.stop());
                 audioStreamRef.current = null;
@@ -59,16 +65,17 @@ export default function TeacherPage() {
 
     const toggleMute = () => {
         if (audioStreamRef.current) {
-            audioStreamRef.current.getAudioTracks().forEach(track => {
-                track.enabled = !isMuted;
+            const audioTracks = audioStreamRef.current.getAudioTracks();
+            audioTracks.forEach(track => {
+                track.enabled = isMuted; // Toggle: if muted, enable; if unmuted, disable
             });
             setIsMuted(!isMuted);
-            console.log(`🎤 Teacher ${!isMuted ? 'Muted' : 'Unmuted'}`);
+            console.log(`🎤 Teacher ${isMuted ? 'UNMUTED' : 'MUTED'}`);
         }
     };
 
     const handleWebSocketMessage = useCallback((message) => {
-        console.log('📨 Teacher received:', message.type, message);
+        console.log('📨 Teacher received:', message.type);
 
         switch (message.type) {
             case 'room_created':
@@ -125,11 +132,11 @@ export default function TeacherPage() {
                 break;
 
             case 'alert':
-                console.log('🚨 ALERT RECEIVED ON FRONTEND:', message.data);
+                console.log('🚨 ALERT RECEIVED:', message.data);
                 setAlerts(prev => {
                     const exists = prev.some(a => a.student_id === message.data.student_id);
                     if (exists) {
-                        console.log('⚠️ Alert already exists, skipping');
+                        console.log('⚠️ Alert already exists');
                         return prev;
                     }
 
@@ -143,7 +150,7 @@ export default function TeacherPage() {
                         timestamp: message.data.timestamp,
                     };
 
-                    console.log('✅ ADDING ALERT TO STATE:', newAlert);
+                    console.log('✅ NEW ALERT ADDED');
                     return [newAlert, ...prev].slice(0, MAX_ALERTS);
                 });
 
@@ -227,7 +234,7 @@ export default function TeacherPage() {
     const copyRoomCode = () => {
         if (roomId) {
             navigator.clipboard.writeText(roomId);
-            alert(`Room code ${roomId} copied to clipboard!`);
+            alert(`Room code ${roomId} copied!`);
         }
     };
 
@@ -242,7 +249,7 @@ export default function TeacherPage() {
     };
 
     const handleLeaveClass = () => {
-        if (confirm('Are you sure you want to end the class for all students?')) {
+        if (confirm('End class for all students?')) {
             if (wsRef.current) wsRef.current.disconnect();
             if (audioStreamRef.current) {
                 audioStreamRef.current.getTracks().forEach(track => track.stop());
@@ -308,6 +315,7 @@ export default function TeacherPage() {
                     </div>
 
                     <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                        {/* Connection Status */}
                         <div style={{
                             padding: '8px 16px',
                             backgroundColor: isConnected ? '#dcfce7' : '#fee2e2',
@@ -318,6 +326,7 @@ export default function TeacherPage() {
                             ● {isConnected ? 'Connected' : 'Reconnecting...'}
                         </div>
 
+                        {/* Show My Camera */}
                         <button
                             onClick={() => setShowMyCamera(true)}
                             style={{
@@ -334,6 +343,7 @@ export default function TeacherPage() {
                             📹 Show My Camera
                         </button>
 
+                        {/* Audio Enable/Disable */}
                         <button
                             onClick={toggleAudio}
                             style={{
@@ -347,9 +357,10 @@ export default function TeacherPage() {
                                 fontWeight: '600',
                             }}
                         >
-                            🎤 {isAudioEnabled ? 'Audio On' : 'Audio Off'}
+                            🎤 {isAudioEnabled ? 'Audio ON' : 'Audio OFF'}
                         </button>
 
+                        {/* Mute/Unmute (only shows when audio enabled) */}
                         {isAudioEnabled && (
                             <button
                                 onClick={toggleMute}
@@ -364,10 +375,11 @@ export default function TeacherPage() {
                                     fontWeight: '600',
                                 }}
                             >
-                                {isMuted ? '🔇 Muted' : '🔊 Unmuted'}
+                                {isMuted ? '🔇 MUTED' : '🔊 UNMUTED'}
                             </button>
                         )}
 
+                        {/* Chat */}
                         <button
                             onClick={() => setShowChat(!showChat)}
                             style={{
@@ -384,6 +396,7 @@ export default function TeacherPage() {
                             💬 Chat {messages.length > 0 && `(${messages.length})`}
                         </button>
 
+                        {/* Leave Class */}
                         <button
                             onClick={handleLeaveClass}
                             style={{
@@ -640,7 +653,7 @@ export default function TeacherPage() {
                 </div>
             )}
 
-            {/* Navigation Tabs - 3 TABS ONLY */}
+            {/* Navigation Tabs */}
             <div style={{
                 backgroundColor: 'white',
                 padding: '8px',
@@ -746,7 +759,7 @@ export default function TeacherPage() {
                             }}>
                                 T
                             </div>
-                            <div>
+                            <div style={{ flex: 1 }}>
                                 <div style={{ fontSize: '18px', fontWeight: '600', color: '#111827' }}>
                                     Teacher (You) 👨‍🏫
                                 </div>
@@ -754,6 +767,19 @@ export default function TeacherPage() {
                                     Host • Monitoring {students.length} student{students.length !== 1 ? 's' : ''}
                                 </div>
                             </div>
+                            {/* Audio Status Indicator */}
+                            {isAudioEnabled && (
+                                <div style={{
+                                    padding: '6px 12px',
+                                    backgroundColor: isMuted ? '#ef4444' : '#22c55e',
+                                    color: 'white',
+                                    borderRadius: '12px',
+                                    fontSize: '12px',
+                                    fontWeight: '600',
+                                }}>
+                                    {isMuted ? '🔇 MUTED' : '🔊 SPEAKING'}
+                                </div>
+                            )}
                         </div>
 
                         {/* Students */}
