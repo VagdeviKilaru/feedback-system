@@ -8,6 +8,7 @@ export default function AudioManager({ wsManager, userId, userType, onStatusChan
     const peerConnectionRef = useRef(null);
     const localStreamRef = useRef(null);
     const remoteAudioRef = useRef(null);
+    const messageHandlerRef = useRef(null);
 
     // STUN servers for NAT traversal
     const iceServers = {
@@ -27,7 +28,7 @@ export default function AudioManager({ wsManager, userId, userType, onStatusChan
                 wsManager.send({
                     type: 'webrtc_ice_candidate',
                     candidate: event.candidate,
-                    target_id: userType === 'teacher' ? null : 'teacher'
+                    target_id: userType === 'student' ? 'teacher' : null
                 });
             }
         };
@@ -36,7 +37,7 @@ export default function AudioManager({ wsManager, userId, userType, onStatusChan
             console.log('🎵 Received remote audio track');
             if (remoteAudioRef.current) {
                 remoteAudioRef.current.srcObject = event.streams[0];
-                remoteAudioRef.current.play();
+                remoteAudioRef.current.play().catch(e => console.error('Audio play error:', e));
                 setIsConnected(true);
             }
         };
@@ -44,6 +45,14 @@ export default function AudioManager({ wsManager, userId, userType, onStatusChan
         pc.onconnectionstatechange = () => {
             console.log('🔗 Connection state:', pc.connectionState);
             setIsConnected(pc.connectionState === 'connected');
+
+            if (onStatusChange) {
+                onStatusChange({
+                    enabled: isEnabled,
+                    muted: isMuted,
+                    connected: pc.connectionState === 'connected'
+                });
+            }
         };
 
         return pc;
@@ -54,7 +63,14 @@ export default function AudioManager({ wsManager, userId, userType, onStatusChan
             console.log('🎤 Starting audio...');
 
             // Get microphone access
-            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            const stream = await navigator.mediaDevices.getUserMedia({
+                audio: {
+                    echoCancellation: true,
+                    noiseSuppression: true,
+                    autoGainControl: true
+                }
+            });
+
             localStreamRef.current = stream;
             setIsEnabled(true);
             setIsMuted(false);
@@ -68,12 +84,12 @@ export default function AudioManager({ wsManager, userId, userType, onStatusChan
                 console.log('🎤 Added audio track to peer connection');
             });
 
-            // Create and send offer
+            // Teacher creates and sends offer
             if (userType === 'teacher') {
                 const offer = await peerConnectionRef.current.createOffer();
                 await peerConnectionRef.current.setLocalDescription(offer);
 
-                console.log('📤 Sending WebRTC offer');
+                console.log('📤 Teacher sending WebRTC offer');
                 wsManager.send({
                     type: 'webrtc_offer',
                     offer: offer
@@ -84,10 +100,10 @@ export default function AudioManager({ wsManager, userId, userType, onStatusChan
                 onStatusChange({ enabled: true, muted: false, connected: false });
             }
 
-            console.log('✅ Audio started');
+            console.log('✅ Audio started successfully');
         } catch (error) {
-            console.error('❌ Audio error:', error);
-            alert('Could not access microphone. Please check permissions.');
+            console.error('❌ Audio start error:', error);
+            alert('Could not access microphone. Please check browser permissions.');
         }
     };
 
@@ -128,60 +144,79 @@ export default function AudioManager({ wsManager, userId, userType, onStatusChan
         }
     };
 
-    // Handle WebRTC messages from WebSocket
+    // Handle WebRTC signaling messages
     useEffect(() => {
         if (!wsManager) return;
 
-        const handleMessage = async (message) => {
-            if (message.type === 'webrtc_offer' && userType === 'student') {
-                console.log('📥 Received WebRTC offer');
+        const handleWebRTCMessage = async (message) => {
+            if (!peerConnectionRef.current && isEnabled) {
+                console.log('⚠️ No peer connection but audio enabled, creating one...');
+                peerConnectionRef.current = createPeerConnection();
 
-                if (!peerConnectionRef.current) {
-                    peerConnectionRef.current = createPeerConnection();
+                if (localStreamRef.current) {
+                    localStreamRef.current.getTracks().forEach(track => {
+                        peerConnectionRef.current.addTrack(track, localStreamRef.current);
+                    });
+                }
+            }
 
-                    if (localStreamRef.current) {
-                        localStreamRef.current.getTracks().forEach(track => {
-                            peerConnectionRef.current.addTrack(track, localStreamRef.current);
-                        });
+            if (!peerConnectionRef.current) {
+                console.log('⚠️ No peer connection to handle message');
+                return;
+            }
+
+            try {
+                if (message.type === 'webrtc_offer' && userType === 'student') {
+                    console.log('📥 Student received WebRTC offer');
+
+                    await peerConnectionRef.current.setRemoteDescription(message.data.offer);
+                    const answer = await peerConnectionRef.current.createAnswer();
+                    await peerConnectionRef.current.setLocalDescription(answer);
+
+                    console.log('📤 Student sending WebRTC answer');
+                    wsManager.send({
+                        type: 'webrtc_answer',
+                        answer: answer,
+                        target_id: message.data.student_id
+                    });
+                }
+
+                if (message.type === 'webrtc_answer' && userType === 'teacher') {
+                    console.log('📥 Teacher received WebRTC answer');
+                    await peerConnectionRef.current.setRemoteDescription(message.data.answer);
+                }
+
+                if (message.type === 'webrtc_ice_candidate') {
+                    console.log('📥 Received ICE candidate');
+                    if (message.data.candidate) {
+                        await peerConnectionRef.current.addIceCandidate(message.data.candidate);
                     }
                 }
-
-                await peerConnectionRef.current.setRemoteDescription(message.data.offer);
-                const answer = await peerConnectionRef.current.createAnswer();
-                await peerConnectionRef.current.setLocalDescription(answer);
-
-                console.log('📤 Sending WebRTC answer');
-                wsManager.send({
-                    type: 'webrtc_answer',
-                    answer: answer,
-                    target_id: message.data.student_id
-                });
-            }
-
-            if (message.type === 'webrtc_answer' && userType === 'teacher') {
-                console.log('📥 Received WebRTC answer');
-                await peerConnectionRef.current.setRemoteDescription(message.data.answer);
-            }
-
-            if (message.type === 'webrtc_ice_candidate') {
-                console.log('📥 Received ICE candidate');
-                if (peerConnectionRef.current && message.data.candidate) {
-                    await peerConnectionRef.current.addIceCandidate(message.data.candidate);
-                }
+            } catch (error) {
+                console.error('❌ WebRTC signaling error:', error);
             }
         };
 
-        // This is a simplified listener - you'll need to integrate with your WebSocket message handler
-        console.log('🎧 Audio manager listening for WebRTC messages');
+        // Store the handler
+        messageHandlerRef.current = handleWebRTCMessage;
+
+        console.log('🎧 AudioManager ready for WebRTC messages');
 
         return () => {
             stopAudio();
         };
-    }, [wsManager, userType]);
+    }, [wsManager, userType, isEnabled, isMuted, isConnected]);
+
+    // Expose message handler to wsManager
+    useEffect(() => {
+        if (wsManager && messageHandlerRef.current) {
+            wsManager.audioMessageHandler = messageHandlerRef.current;
+        }
+    }, [wsManager]);
 
     return (
-        <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-            {/* Remote audio element (hidden) */}
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+            {/* Hidden audio element for remote stream */}
             <audio ref={remoteAudioRef} autoPlay style={{ display: 'none' }} />
 
             {/* Audio Enable/Disable Button */}
@@ -206,7 +241,7 @@ export default function AudioManager({ wsManager, userId, userType, onStatusChan
                     <span style={{
                         width: '8px',
                         height: '8px',
-                        backgroundColor: '#22c55e',
+                        backgroundColor: '#fff',
                         borderRadius: '50%',
                         display: 'inline-block',
                         animation: 'pulse 2s ease-in-out infinite',
@@ -214,7 +249,7 @@ export default function AudioManager({ wsManager, userId, userType, onStatusChan
                 )}
             </button>
 
-            {/* Mute/Unmute Button */}
+            {/* Mute/Unmute Button (only visible when audio is enabled) */}
             {isEnabled && (
                 <button
                     onClick={toggleMute}
@@ -229,7 +264,7 @@ export default function AudioManager({ wsManager, userId, userType, onStatusChan
                         fontWeight: '600',
                     }}
                 >
-                    {isMuted ? '🔇 MUTED' : '🔊 SPEAKING'}
+                    {isMuted ? '🔇 Muted' : '🔊 Speaking'}
                 </button>
             )}
 

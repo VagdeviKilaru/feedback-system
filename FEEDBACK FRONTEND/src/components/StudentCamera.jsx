@@ -7,7 +7,7 @@ export default function StudentCamera({ onStatusChange, onFrameCapture }) {
   const canvasRef = useRef(null);
   const [status, setStatus] = useState('no_face');
   const [isActive, setIsActive] = useState(false);
-  
+
   const statusRef = useRef('no_face');
   const eyesClosedStartRef = useRef(null);
   const lastFrameCaptureRef = useRef(0);
@@ -29,7 +29,21 @@ export default function StudentCamera({ onStatusChange, onFrameCapture }) {
     const initializeCamera = async () => {
       try {
         console.log('🎥 Initializing student camera...');
-        
+
+        // Check camera permissions first
+        try {
+          const permissions = await navigator.permissions.query({ name: 'camera' });
+          console.log('📹 Camera permission:', permissions.state);
+
+          if (permissions.state === 'denied') {
+            console.error('❌ Camera access denied');
+            alert('Camera access denied. Please enable camera in browser settings.');
+            return;
+          }
+        } catch (permError) {
+          console.log('⚠️ Permission API not supported, continuing anyway');
+        }
+
         // Initialize FaceMesh
         faceMeshRef.current = new FaceMesh({
           locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`
@@ -47,6 +61,8 @@ export default function StudentCamera({ onStatusChange, onFrameCapture }) {
 
           const now = Date.now();
           const canvas = canvasRef.current;
+          if (!canvas) return;
+
           const ctx = canvas.getContext('2d');
 
           // Draw video frame
@@ -94,14 +110,14 @@ export default function StudentCamera({ onStatusChange, onFrameCapture }) {
             // RULE 3: Check if looking away (HEAD TURNED)
             const lookingAway = !isLookingStraight;
 
-            // Determine status
+            // Determine status based on THREE RULES
             if (eyesClosed) {
               // Eyes closed - check duration
               if (!eyesClosedStartRef.current) {
                 eyesClosedStartRef.current = now;
               }
               const eyesClosedDuration = (now - eyesClosedStartRef.current) / 1000;
-              
+
               if (eyesClosedDuration > 2.0) {
                 currentStatus = 'drowsy'; // DROWSY: Eyes closed > 2 seconds
               } else {
@@ -110,7 +126,7 @@ export default function StudentCamera({ onStatusChange, onFrameCapture }) {
             } else {
               // Eyes open
               eyesClosedStartRef.current = null;
-              
+
               if (lookingAway) {
                 currentStatus = 'looking_away'; // LOOKING AWAY: Head turned
               } else {
@@ -139,11 +155,11 @@ export default function StudentCamera({ onStatusChange, onFrameCapture }) {
               nose_y: noseY,
               timestamp: now
             };
-            
+
             if (onStatusChange) {
               onStatusChange(detectionData);
             }
-            
+
             lastStatusSendRef.current = now;
           }
 
@@ -176,6 +192,7 @@ export default function StudentCamera({ onStatusChange, onFrameCapture }) {
 
       } catch (error) {
         console.error('❌ Camera initialization error:', error);
+        alert(`Camera error: ${error.message}. Please check camera permissions.`);
       }
     };
 
@@ -216,6 +233,7 @@ export default function StudentCamera({ onStatusChange, onFrameCapture }) {
         ref={videoRef}
         style={{ display: 'none' }}
         playsInline
+        autoPlay
       />
       <canvas
         ref={canvasRef}
@@ -228,7 +246,7 @@ export default function StudentCamera({ onStatusChange, onFrameCapture }) {
           transform: 'scaleX(-1)',
         }}
       />
-      
+
       {/* Status Overlay */}
       <div style={{
         position: 'absolute',
