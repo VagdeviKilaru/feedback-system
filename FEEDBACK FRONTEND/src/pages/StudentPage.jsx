@@ -21,7 +21,8 @@ export default function StudentPage() {
   const [teacherFrame, setTeacherFrame] = useState(null);
   const [participantFrames, setParticipantFrames] = useState({});
   const [audioStatus, setAudioStatus] = useState({ enabled: false, muted: true, connected: false });
-  
+  const [currentStatus, setCurrentStatus] = useState('attentive');
+
   const wsRef = useRef(null);
   const studentIdRef = useRef(null);
   const chatEndRef = useRef(null);
@@ -29,20 +30,12 @@ export default function StudentPage() {
 
   const handleWebSocketMessage = useCallback((message) => {
     console.log('📨 Student received:', message.type);
-    
-    // Forward WebRTC messages to AudioManager
-    if (wsRef.current?.audioMessageHandler && 
-        (message.type === 'webrtc_offer' || 
-         message.type === 'webrtc_answer' || 
-         message.type === 'webrtc_ice_candidate')) {
-      wsRef.current.audioMessageHandler(message);
-    }
-    
+
     switch (message.type) {
       case 'participant_list':
         setParticipants(message.data.participants || []);
         break;
-      
+
       case 'student_join':
         setParticipants(prev => {
           const exists = prev.some(p => p.id === message.data.student_id);
@@ -54,15 +47,15 @@ export default function StudentPage() {
           }];
         });
         break;
-      
+
       case 'student_leave':
         setParticipants(prev => prev.filter(p => p.id !== message.data.student_id));
         break;
-      
+
       case 'teacher_frame':
         setTeacherFrame(message.data.frame);
         break;
-      
+
       case 'camera_frame':
         if (message.data.student_id !== studentIdRef.current) {
           setParticipantFrames(prev => ({
@@ -71,23 +64,23 @@ export default function StudentPage() {
           }));
         }
         break;
-      
+
       case 'chat_message':
         setMessages(prev => [...prev, message.data]);
         setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
         break;
-      
+
       case 'room_closed':
         alert('Teacher ended the class');
         setIsJoined(false);
         navigate('/');
         break;
-      
+
       case 'error':
         setConnectionError(message.message);
         setIsConnected(false);
         break;
-      
+
       default:
         break;
     }
@@ -137,12 +130,16 @@ export default function StudentPage() {
 
   const handleStatusChange = (detectionData) => {
     console.log('📊 Detection:', detectionData.status);
+    setCurrentStatus(detectionData.status);
+
     if (wsRef.current?.isConnected()) {
       wsRef.current.send({
         type: 'attention_update',
         data: detectionData,
       });
-      console.log('✅ Status sent to server');
+      console.log('✅ Status sent to server:', detectionData.status);
+    } else {
+      console.warn('⚠️ WebSocket not connected, cannot send status');
     }
   };
 
@@ -336,8 +333,34 @@ export default function StudentPage() {
             ● {isConnected ? 'Connected' : 'Reconnecting...'}
           </div>
 
+          {/* TEST BUTTON - Remove after testing */}
+          <button
+            onClick={() => {
+              const testStatus = currentStatus === 'attentive' ? 'looking_away' : 'attentive';
+              handleStatusChange({
+                status: testStatus,
+                ear: 0.25,
+                nose_x: 0.5,
+                nose_y: 0.5,
+                timestamp: Date.now()
+              });
+            }}
+            style={{
+              padding: '8px 16px',
+              backgroundColor: '#f59e0b',
+              color: 'white',
+              border: 'none',
+              borderRadius: '8px',
+              cursor: 'pointer',
+              fontSize: '14px',
+              fontWeight: '600',
+            }}
+          >
+            🧪 Test Alert ({currentStatus})
+          </button>
+
           {/* Audio Manager Component */}
-          <AudioManager 
+          <AudioManager
             wsManager={wsRef.current}
             userId={studentIdRef.current}
             userType="student"
@@ -386,12 +409,29 @@ export default function StudentPage() {
             {audioStatus.connected ? '🔊' : '🔌'}
           </span>
           <span>
-            {audioStatus.connected 
-              ? `Audio Connected ${audioStatus.muted ? '(Muted)' : '(Speaking)'}` 
-              : 'Connecting audio...'}
+            {audioStatus.connected
+              ? `Audio Connected ${audioStatus.muted ? '(Muted)' : '(Speaking)'}`
+              : 'Audio enabled (WebRTC needed for transmission)'}
           </span>
         </div>
       )}
+
+      {/* Current Status Debug Info */}
+      <div style={{
+        backgroundColor: 'white',
+        padding: '12px 24px',
+        marginBottom: '20px',
+        borderRadius: '12px',
+        boxShadow: '0 4px 12px rgba(0, 0, 0, 0.1)',
+        fontSize: '14px',
+        fontWeight: '600',
+        color: '#111827',
+      }}>
+        📊 Current Status: <span style={{
+          color: currentStatus === 'attentive' ? '#22c55e' : '#f59e0b',
+          textTransform: 'uppercase'
+        }}>{currentStatus}</span>
+      </div>
 
       {/* Tabs */}
       <div style={{
@@ -534,7 +574,6 @@ export default function StudentPage() {
                 alignItems: 'center',
               }}>
                 <span>📹 You</span>
-                {/* Audio indicator */}
                 {audioStatus.enabled && (
                   <span style={{
                     fontSize: '10px',
@@ -622,7 +661,7 @@ export default function StudentPage() {
             <h3 style={{ fontSize: '18px', fontWeight: '600', marginBottom: '16px', color: '#111827' }}>
               Chat
             </h3>
-            
+
             <div style={{
               flex: 1,
               overflowY: 'auto',
@@ -659,7 +698,7 @@ export default function StudentPage() {
               )}
               <div ref={chatEndRef} />
             </div>
-            
+
             <div style={{ display: 'flex', gap: '8px' }}>
               <input
                 type="text"
