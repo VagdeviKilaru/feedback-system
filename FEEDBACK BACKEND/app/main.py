@@ -389,29 +389,3 @@ async def teacher_websocket(
         print(f"❌ Error in teacher websocket: {e}")
         heartbeat_task.cancel()
         await manager.disconnect_teacher(websocket)
-
-
-if __name__ == "__main__":
-    print("=" * 80)
-    print("🚀 STARTING LIVE FEEDBACK SYSTEM - ULTRA SIMPLE ALERTS")
-    print("=" * 80)
-    print("📡 WebSocket Endpoints:")
-    print("   - Student: ws://localhost:8000/ws/student/{room_id}/{student_id}?name={name}")
-    print("   - Teacher: ws://localhost:8000/ws/teacher?name={name}")
-    print("🌐 API: http://localhost:8000")
-    print("📖 Docs: http://localhost:8000/docs")
-    print("=" * 80)
-    print("🎯 ALERT SYSTEM: SIMPLE AND GUARANTEED")
-    print("   - attentive → NO ALERT")
-    print("   - looking_away → INSTANT ALERT")
-    print("   - drowsy → INSTANT ALERT")
-    print("   - no_face → INSTANT ALERT")
-    print("=" * 80)
-    
-    uvicorn.run(
-        "main:app",
-        host="0.0.0.0",
-        port=8000,
-        reload=True,
-        log_level="info"
-    )
